@@ -91,16 +91,20 @@ class TelegramService:
 
     # --- Authorization Flow ---
     async def request_auth_code(self, api_id: int, api_hash: str, phone: str) -> Dict[str, Any]:
-        """Step 1: Save credentials and request verification code."""
+        """Step 1: Save credentials and request fresh verification code (cleans old expired sessions)."""
         db.set_setting("tg_api_id", str(api_id))
         db.set_setting("tg_api_hash", str(api_hash))
         db.set_setting("tg_phone", str(phone))
 
-        if self.client and self.client.is_connected():
-            await self.client.disconnect()
+        if self.client:
+            try:
+                if self.client.is_connected():
+                    await self.client.disconnect()
+            except Exception:
+                pass
 
-        session_str = db.get_setting("session_string") or ""
-        self.client = TelegramClient(StringSession(session_str), api_id, api_hash)
+        # Always start with fresh empty StringSession to prevent "used under two different IP" errors
+        self.client = TelegramClient(StringSession(""), api_id, api_hash)
         await self.client.connect()
         self.is_connected = True
 
