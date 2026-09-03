@@ -35,6 +35,10 @@ TARGET_TTL_SECONDS = 900                # 15 minutes without updates before mark
 ADMIN_SECRET_KEY = os.getenv("ADMIN_SECRET_KEY", "skywatch-secret-key-2026")
 MAINTENANCE_MODE_DEFAULT = False
 
+# Turso Cloud Database Configuration
+TURSO_DATABASE_URL = os.getenv("TURSO_DATABASE_URL", "https://skwatchdb-mrzombie121.aws-us-west-2.turso.io")
+TURSO_AUTH_TOKEN = os.getenv("TURSO_AUTH_TOKEN", "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3ODg0NTI2MzYsImlkIjoiMDFhMDY4MTUtNDkwMS03YzY4LTk1OTAtNDQwMmE1MThlMWEyIiwia2lkIjoiLVdZY3BUd0V6MFU1NUxrWDYySHh4QzdJUV9XcGZCdHJLR1ZzMVZpcmVKMCIsInJpZCI6IjIzMzQ5NWQ3LWUzMzgtNDIyMC04NDlmLWRmMDNlY2U4YThlZCJ9.GGI9BUS3apLBedo1iOwjej6cixfw2k9fIYrQKfMyRvtzBZP1W43WrvI7QcuKmBH3bvZxnvKiIjC_3oESqZ66Aw")
+
 # Kinematics & Loitering Parameters
 CIRCLING_DURATION_SEC = 6.0              # Circles over target upon arrival before fading out
 CIRCLING_RADIUS_KM = 0.65                # Orbit radius in km over the destination city

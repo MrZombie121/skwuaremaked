@@ -726,32 +726,38 @@ async function fetchAndRenderChannels() {
         const data = await resp.json();
         channelsList = data.channels || [];
         
-        document.getElementById('monitored-channels-badge').innerText = channelsList.length;
-        document.getElementById('table-channels-count').innerText = channelsList.length;
-        if (data.folder_url) {
-            document.getElementById('input-folder-url').value = data.folder_url;
+        const badge1 = document.getElementById('monitored-channels-badge');
+        const badge2 = document.getElementById('table-channels-count');
+        const folderInput = document.getElementById('input-folder-url');
+
+        if (badge1) badge1.innerText = channelsList.length;
+        if (badge2) badge2.innerText = channelsList.length;
+        if (folderInput && data.folder_url) {
+            folderInput.value = data.folder_url;
         }
 
         const tbody = document.getElementById('channels-table-body');
-        if (channelsList.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#6b7a8d; padding:20px;">Немає каналів у базі. Синхронізуйте папку вище.</td></tr>';
-            return;
-        }
+        if (tbody) {
+            if (channelsList.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#6b7a8d; padding:20px;">Немає каналів у базі. Синхронізуйте папку вище.</td></tr>';
+                return;
+            }
 
-        tbody.innerHTML = channelsList.map(ch => `
-            <tr>
-                <td>
-                    <input type="checkbox" ${ch.is_active ? 'checked' : ''} onchange="toggleChannel(${ch.id}, this.checked)">
-                </td>
-                <td style="font-weight:700; color: #f0f6fc;">${ch.title}</td>
-                <td style="color: #00e5ff;">${ch.username ? '@' + ch.username : (ch.tg_channel_id || '-')}</td>
-                <td>${ch.total_messages_parsed || 0}</td>
-                <td style="color: #ff9100; font-weight:700;">${ch.threats_detected || 0}</td>
-                <td>
-                    <button class="hud-btn danger" style="padding: 2px 6px; font-size: 10px;" onclick="deleteChannel(${ch.id})">✕ ВИДАЛИТИ</button>
-                </td>
-            </tr>
-        `).join('');
+            tbody.innerHTML = channelsList.map(ch => `
+                <tr>
+                    <td>
+                        <input type="checkbox" ${ch.is_active ? 'checked' : ''} onchange="toggleChannel(${ch.id}, this.checked)">
+                    </td>
+                    <td style="font-weight:700; color: #f0f6fc;">${ch.title}</td>
+                    <td style="color: #00e5ff;">${ch.username ? '@' + ch.username : (ch.tg_channel_id || '-')}</td>
+                    <td>${ch.total_messages_parsed || 0}</td>
+                    <td style="color: #ff9100; font-weight:700;">${ch.threats_detected || 0}</td>
+                    <td>
+                        <button class="hud-btn danger" style="padding: 2px 6px; font-size: 10px;" onclick="deleteChannel(${ch.id})">✕ ВИДАЛИТИ</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
     } catch (e) {
         console.error("Error fetching channels:", e);
     }
@@ -789,16 +795,18 @@ async function fetchTelegramStatus() {
         const label = document.getElementById('tg-auth-status-label');
         const authCard = document.getElementById('auth-state-text');
 
-        if (data.is_authorized && data.user) {
-            label.innerText = `TG: ${data.user.first_name || 'ONLINE'}`;
-            label.parentElement.classList.add('active');
-            authCard.innerText = `СТАТУС: АВТОРИЗОВАНО (${data.user.first_name} | @${data.user.username || data.user.phone})`;
-            authCard.className = "auth-state text-green";
-        } else {
-            label.innerText = "TG: АВТОРИЗАЦІЯ";
-            label.parentElement.classList.remove('active');
-            authCard.innerText = "СТАТУС: НЕ АВТОРИЗОВАНО";
-            authCard.className = "auth-state text-orange";
+        if (label && authCard) {
+            if (data.is_authorized && data.user) {
+                label.innerText = `TG: ${data.user.first_name || 'ONLINE'}`;
+                label.parentElement?.classList.add('active');
+                authCard.innerText = `СТАТУС: АВТОРИЗОВАНО (${data.user.first_name} | @${data.user.username || data.user.phone})`;
+                authCard.className = "auth-state text-green";
+            } else {
+                label.innerText = "TG: АВТОРИЗАЦІЯ";
+                label.parentElement?.classList.remove('active');
+                authCard.innerText = "СТАТУС: НЕ АВТОРИЗОВАНО";
+                authCard.className = "auth-state text-orange";
+            }
         }
     } catch (e) {
         console.error("Error fetching TG status:", e);
@@ -825,6 +833,7 @@ async function toggleSimulator() {
 function updateSimulatorBtn() {
     const btn = document.getElementById('btn-simulator-toggle');
     const label = document.getElementById('sim-status-label');
+    if (!btn || !label) return;
     if (simulatorActive) {
         label.innerText = "SIM: ON";
         btn.classList.add('active');
@@ -886,41 +895,89 @@ window.closeModal = function(id) {
 };
 
 // 12. WebSocket Connection Manager
+let isWsConnected = false;
+let pollingInterval = null;
+
 function connectWebSocket() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws`;
 
     const statusEl = document.getElementById('connection-status');
-    statusEl.innerText = "CONNECTING...";
-    statusEl.className = "stat-value text-orange";
+    if (statusEl) {
+        statusEl.innerText = "CONNECTING...";
+        statusEl.className = "stat-value text-orange";
+    }
 
-    ws = new WebSocket(wsUrl);
+    try {
+        ws = new WebSocket(wsUrl);
 
-    ws.onopen = () => {
-        statusEl.innerText = "ONLINE";
-        statusEl.className = "stat-value text-green";
-        console.log("WebSocket connected to SkyWatch core.");
-    };
+        ws.onopen = () => {
+            isWsConnected = true;
+            if (statusEl) {
+                statusEl.innerText = "ONLINE";
+                statusEl.className = "stat-value text-green";
+            }
+            console.log("WebSocket connected to SkyWatch core.");
+        };
 
-    ws.onmessage = (event) => {
-        try {
-            const payload = JSON.parse(event.data);
-            handleServerMessage(payload);
-        } catch (e) {
-            console.error("Error parsing WS frame:", e);
-        }
-    };
+        ws.onmessage = (event) => {
+            try {
+                const payload = JSON.parse(event.data);
+                handleServerMessage(payload);
+            } catch (e) {
+                console.error("Error parsing WS frame:", e);
+            }
+        };
 
-    ws.onclose = () => {
-        statusEl.innerText = "RECONNECTING";
-        statusEl.className = "stat-value text-red";
-        setTimeout(connectWebSocket, 3000);
-    };
+        ws.onclose = () => {
+            isWsConnected = false;
+            if (statusEl) {
+                statusEl.innerText = "RECONNECTING";
+                statusEl.className = "stat-value text-red";
+            }
+            setTimeout(connectWebSocket, 3000);
+        };
 
-    ws.onerror = (err) => {
-        console.error("WS error:", err);
-        ws.close();
-    };
+        ws.onerror = (err) => {
+            console.error("WS error:", err);
+            isWsConnected = false;
+            try { ws.close(); } catch (_) {}
+        };
+    } catch (e) {
+        console.error("WebSocket init failed:", e);
+    }
+
+    // Fallback REST Polling every 2.5s to ensure map ALWAYS receives live updates even if WS is blocked
+    if (!pollingInterval) {
+        pollingInterval = setInterval(async () => {
+            try {
+                const [tResp, mResp] = await Promise.all([
+                    fetch('/api/targets'),
+                    fetch('/api/maintenance/status')
+                ]);
+                
+                if (mResp.ok) {
+                    const mData = await mResp.json();
+                    if (mData.maintenance_mode) {
+                        window.location.reload();
+                        return;
+                    }
+                }
+
+                if (tResp.ok) {
+                    const tData = await tResp.json();
+                    if (tData.targets) {
+                        renderTargetsOnMap(tData.targets);
+                        updateUI(tData.targets);
+                        if (!isWsConnected && statusEl) {
+                            statusEl.innerText = "ONLINE (HTTP)";
+                            statusEl.className = "stat-value text-green";
+                        }
+                    }
+                }
+            } catch (_) {}
+        }, 2500);
+    }
 }
 
 function handleServerMessage(msg) {

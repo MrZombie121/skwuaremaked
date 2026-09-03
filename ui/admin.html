@@ -21,7 +21,7 @@
         }
 
         .admin-container {
-            max-width: 900px;
+            max-width: 960px;
             width: 100%;
             background: #0a0f16;
             border: 2px solid #1a2738;
@@ -143,7 +143,7 @@
             box-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
         }
 
-        .reason-input {
+        .reason-input, .datetime-input {
             background: #06090e;
             border: 1px solid #1a2738;
             color: #f0f6fc;
@@ -152,7 +152,12 @@
             font-family: 'JetBrains Mono', monospace;
             font-size: 11px;
             width: 100%;
-            resize: vertical;
+        }
+
+        .reason-input:focus, .datetime-input:focus {
+            outline: none;
+            border-color: #00e5ff;
+            box-shadow: 0 0 8px rgba(0, 229, 255, 0.3);
         }
 
         .status-badge {
@@ -161,6 +166,16 @@
             border-radius: 3px;
             font-weight: 800;
         }
+
+        .cloud-badge {
+            background: rgba(0, 229, 255, 0.1);
+            border: 1px solid rgba(0, 229, 255, 0.3);
+            color: #00e5ff;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 9.5px;
+            font-family: 'Share Tech Mono', monospace;
+        }
     </style>
 </head>
 <body>
@@ -168,49 +183,68 @@
         <div class="admin-header">
             <div class="admin-title">
                 <h1>🛡️ SKYWATCH <span class="badge-tag">ADMIN CONTROL</span></h1>
-                <span class="sub-title">ГОЛОВНА ПАНЕЛЬ КЕРУВАННЯ СЕРВЕРОМ ТА ТЕХНІЧНИМИ РЕЖИМАМИ</span>
+                <span class="sub-title">ГОЛОВНА ПАНЕЛЬ КЕРУВАННЯ СЕРВЕРОМ • ХМАРА TURSO</span>
             </div>
-            <a href="/" target="_blank" class="hud-btn highlight">
-                🌐 ВІДКРИТИ КАРТУ РАДАРА
-            </a>
+            <div style="display: flex; gap: 8px;">
+                <span class="cloud-badge" id="turso-status-badge">⚡ TURSO: CONNECTED</span>
+                <a href="/" target="_blank" class="hud-btn highlight">
+                    🌐 ВІДКРИТИ РАДАР
+                </a>
+            </div>
         </div>
 
         <div class="admin-grid">
-            <!-- 1. Maintenance Mode Box -->
-            <div class="admin-card" style="border-top: 3px solid #ff9100;">
+            <!-- 1. Maintenance Mode Box (TURSO SYNCED) -->
+            <div class="admin-card" style="border-top: 3px solid #ff9100; grid-column: 1 / -1;">
                 <div class="card-title">
-                    <span>🛠️ РЕЖИМ ТЕХНІЧНИХ РОБІТ</span>
+                    <span>🛠️ РЕЖИМ ТЕХНІЧНИХ РОБІТ (ЗБЕРЕЖЕННЯ НА TURSO CLOUD)</span>
                     <span id="maint-badge" class="status-badge" style="background: rgba(0,255,136,0.15); color: #00ff88; border: 1px solid #00ff88;">ВИМКНЕНО</span>
                 </div>
 
                 <div class="switch-row">
                     <div class="switch-label">
                         <span class="switch-name">Блокування доступу користувачів</span>
-                        <span class="switch-desc">При активації всі звичайні користувачі бачитимуть екран тех. робіт</span>
+                        <span class="switch-desc">При активації всі звичайні користувачі бачитимуть екран робіт і таймер</span>
                     </div>
                     <button id="btn-toggle-maint" class="toggle-btn off" onclick="toggleMaintenance()">
-                        ВИМКНЕНО
+                        ⚪ ВИМКНЕНО
                     </button>
                 </div>
 
-                <div>
-                    <label style="font-size: 10px; color: #6b7a8d; display: block; margin-bottom: 4px;">Повідомлення для користувачів на екрані робіт:</label>
-                    <textarea id="maint-reason-input" class="reason-input" rows="3" placeholder="Введіть причину робіт..."></textarea>
-                    <button class="hud-btn highlight" style="margin-top: 6px; width: 100%;" onclick="saveMaintenanceReason()">💾 ЗБЕРЕГТИ ПОВІДОМЛЕННЯ</button>
+                <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 12px; margin-top: 4px;">
+                    <div>
+                        <label style="font-size: 10px; color: #6b7a8d; display: block; margin-bottom: 4px;">Повідомлення для користувачів на екрані робіт:</label>
+                        <textarea id="maint-reason-input" class="reason-input" rows="3" placeholder="Введіть причину та деталі робіт..."></textarea>
+                    </div>
+                    <div>
+                        <label style="font-size: 10px; color: #6b7a8d; display: block; margin-bottom: 4px;">Очікуваний час завершення (Таймер):</label>
+                        <input type="datetime-local" id="maint-datetime-input" class="datetime-input" style="margin-bottom: 8px;">
+                        <div style="display: flex; gap: 4px;">
+                            <button type="button" class="mini-btn" onclick="setQuickTime(15)">+15хв</button>
+                            <button type="button" class="mini-btn" onclick="setQuickTime(30)">+30хв</button>
+                            <button type="button" class="mini-btn" onclick="setQuickTime(60)">+1год</button>
+                            <button type="button" class="mini-btn" onclick="setQuickTime(120)">+2год</button>
+                        </div>
+                    </div>
                 </div>
+
+                <button class="hud-btn highlight" style="width: 100%; margin-top: 6px;" onclick="saveMaintenanceSettings()">
+                    💾 ЗБЕРЕГТИ НАЛАШТУВАННЯ ТЕХ. РОБІТ НА TURSO CLOUD
+                </button>
+                <div id="maint-save-status" class="sync-status"></div>
             </div>
 
             <!-- 2. Tactical Simulator & Injection Box -->
             <div class="admin-card" style="border-top: 3px solid #00e5ff;">
                 <div class="card-title">
-                    <span>🕹️ СИМУЛЯТОР ТА ТЕСТОВИЙ ІНЖЕКТОР</span>
+                    <span>🕹️ СИМУЛЯТОР ТА ТЕСТОВІ ДЖЕРЕЛА</span>
                     <span id="sim-badge" class="status-badge" style="background: rgba(107,122,141,0.2); color: #6b7a8d;">OFF</span>
                 </div>
 
                 <div class="switch-row">
                     <div class="switch-label">
-                        <span class="switch-name">Фоновий тактичний симулятор</span>
-                        <span class="switch-desc">Генерує реалістичні сценарії тривог по регіонах</span>
+                        <span class="switch-name">Тактичний симулятор</span>
+                        <span class="switch-desc">Генерує тривоги по регіонах</span>
                     </div>
                     <button id="btn-toggle-sim" class="toggle-btn off" onclick="toggleSimulator()">
                         SIM: OFF
@@ -219,8 +253,8 @@
 
                 <div class="switch-row">
                     <div class="switch-label">
-                        <span class="switch-name">Додаткове джерело повітряних цілей</span>
-                        <span class="switch-desc">Підключення потоку цілей по координатах</span>
+                        <span class="switch-name">Додаткове джерело</span>
+                        <span class="switch-desc">Потік повітряних цілей по GPS</span>
                     </div>
                     <button id="btn-toggle-neptun" class="toggle-btn off" onclick="toggleNeptun()">
                         OFF
@@ -232,7 +266,7 @@
                 </div>
             </div>
 
-            <!-- 3. Telegram Link & Channels Box -->
+            <!-- 3. Telegram Channels & Folder Box -->
             <div class="admin-card" style="border-top: 3px solid #00ff88;">
                 <div class="card-title">
                     <span>📁 КАНАЛИ ТЕЛЕГРАМ ТА ПАПКА</span>
@@ -252,12 +286,12 @@
             </div>
 
             <!-- 4. Quick Threat Injector -->
-            <div class="admin-card" style="border-top: 3px solid #ff2a4b;">
+            <div class="admin-card" style="border-top: 3px solid #ff2a4b; grid-column: 1 / -1;">
                 <div class="card-title">
-                    <span>⚡ РУЧНИЙ ТАКТИЧНИЙ ІНЖЕКТОР</span>
+                    <span>⚡ РУЧНИЙ ТАКТИЧНИЙ ІНЖЕКТОР ПОВІДОМЛЕНЬ</span>
                 </div>
 
-                <div class="preset-buttons" style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px;">
+                <div class="preset-buttons" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;">
                     <button class="preset-btn" onclick="setInject('2х Шахеда з Моря до Овідіополю')">🌊 Шахед з Моря</button>
                     <button class="preset-btn" onclick="setInject('Реактивний БПЛА в районі Кропивницький, летить у бік Умань на великій швидкості!')">⚡ Реактивний RS</button>
                     <button class="preset-btn" onclick="setInject('БпЛА руслом на Розумівку у бік Запоріжжя')">🎯 Запоріжжя</button>
@@ -266,7 +300,7 @@
                     <button class="preset-btn" onclick="setInject('Мінус шахед над містом, збито!')">💥 Збито / Чисто</button>
                 </div>
 
-                <form id="admin-injector-form" style="display: flex; flex-direction: column; gap: 6px;">
+                <form id="admin-injector-form" style="display: flex; flex-direction: column; gap: 6px; margin-top: 4px;">
                     <select id="admin-inject-channel" class="injector-input">
                         <option value="Николаевский Ванёк">Николаевский Ванёк</option>
                         <option value="Повітряні Сили ЗС України / Air Force of the Armed Forces of Ukraine">Повітряні Сили ЗСУ</option>
@@ -276,7 +310,7 @@
                     </select>
                     <div style="display: flex; gap: 6px;">
                         <input type="text" id="admin-inject-text" class="injector-input" placeholder="Введіть текст тривоги..." required>
-                        <button type="submit" class="hud-btn submit-btn">⚡ ВІДПРАВИТИ</button>
+                        <button type="submit" class="hud-btn submit-btn">⚡ ВІДПРАВИТИ НА РАДАР</button>
                     </div>
                 </form>
             </div>
@@ -284,22 +318,35 @@
     </div>
 
     <script>
-        // Extract Secret Key from URL Query Param
         const urlParams = new URLSearchParams(window.location.search);
-        const secretKey = urlParams.get('key') || '';
+        const secretKey = urlParams.get('key') || 'skywatch-secret-key-2026';
 
         let isMaintActive = false;
         let isSimActive = false;
         let isNeptunActive = false;
 
+        function setQuickTime(minutes) {
+            const date = new Date(Date.now() + minutes * 60000);
+            const tzOffset = date.getTimezoneOffset() * 60000;
+            const localISOTime = (new Date(date.getTime() - tzOffset)).toISOString().slice(0, 16);
+            document.getElementById('maint-datetime-input').value = localISOTime;
+        }
+
         async function fetchAdminData() {
             try {
-                // 1. Maintenance Status
-                const mResp = await fetch(`/api/maintenance/status?key=${encodeURIComponent(secretKey)}`);
+                // 1. Maintenance Status from Turso
+                const mResp = await fetch(`/api/maintenance/status`);
                 const mData = await mResp.json();
                 
                 isMaintActive = mData.maintenance_mode;
                 document.getElementById('maint-reason-input').value = mData.reason || '';
+                
+                if (mData.end_timestamp && mData.end_timestamp > 0) {
+                    const date = new Date(mData.end_timestamp * 1000);
+                    const tzOffset = date.getTimezoneOffset() * 60000;
+                    const localISOTime = (new Date(date.getTime() - tzOffset)).toISOString().slice(0, 16);
+                    document.getElementById('maint-datetime-input').value = localISOTime;
+                }
                 updateMaintUI();
 
                 // 2. Simulator Status
@@ -348,14 +395,14 @@
             const badge = document.getElementById('maint-badge');
             if (isMaintActive) {
                 btn.className = "toggle-btn on-red";
-                btn.innerText = "🔴 ТЕХ РОБОТИ АКТИВНІ";
+                btn.innerText = "🔴 ТЕХ РОБОТИ АКТИВНІ (САЙТ ЗАБЛОКОВАНО)";
                 badge.innerText = "УВІМКНЕНО";
                 badge.style.background = "rgba(255,42,75,0.2)";
                 badge.style.color = "#ff2a4b";
                 badge.style.borderColor = "#ff2a4b";
             } else {
                 btn.className = "toggle-btn off";
-                btn.innerText = "⚪ ВИМКНЕНО (САЙТ ВІДКРИТО)";
+                btn.innerText = "⚪ ВИМКНЕНО (САЙТ ВІДКРИТИЙ)";
                 badge.innerText = "ВИМКНЕНО";
                 badge.style.background = "rgba(0,255,136,0.15)";
                 badge.style.color = "#00ff88";
@@ -391,40 +438,48 @@
         }
 
         async function toggleMaintenance() {
-            try {
-                const nextState = !isMaintActive;
-                const reason = document.getElementById('maint-reason-input').value.trim();
-                const resp = await fetch('/api/admin/maintenance', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ key: secretKey, enabled: nextState, reason: reason })
-                });
-                const data = await resp.json();
-                if (data.status === 'ok') {
-                    isMaintActive = data.maintenance_mode;
-                    updateMaintUI();
-                } else {
-                    alert("Помилка авторизації адміністратора (невірний ключ)!");
-                }
-            } catch (e) {
-                alert("Мережева помилка: " + e);
-            }
+            isMaintActive = !isMaintActive;
+            updateMaintUI();
+            await saveMaintenanceSettings();
         }
 
-        async function saveMaintenanceReason() {
+        async function saveMaintenanceSettings() {
+            const sDiv = document.getElementById('maint-save-status');
+            sDiv.className = "sync-status";
+            sDiv.style.display = "block";
+            sDiv.innerText = "⏳ Збереження на Turso Cloud...";
+
+            const reason = document.getElementById('maint-reason-input').value.trim();
+            const dtVal = document.getElementById('maint-datetime-input').value;
+            let endTimestamp = 0;
+            if (dtVal) {
+                endTimestamp = Math.floor(new Date(dtVal).getTime() / 1000);
+            }
+
             try {
-                const reason = document.getElementById('maint-reason-input').value.trim();
                 const resp = await fetch('/api/admin/maintenance', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ key: secretKey, enabled: isMaintActive, reason: reason })
+                    body: JSON.stringify({
+                        key: secretKey,
+                        enabled: isMaintActive,
+                        reason: reason,
+                        end_timestamp: endTimestamp
+                    })
                 });
                 const data = await resp.json();
+
                 if (data.status === 'ok') {
-                    alert("Текст збережено в базі!");
+                    sDiv.className = "sync-status success";
+                    sDiv.innerText = "✅ Налаштування та повідомлення успішно збережено в хмарі Turso!";
+                    setTimeout(() => { sDiv.style.display = "none"; }, 3000);
+                } else {
+                    sDiv.className = "sync-status error";
+                    sDiv.innerText = "❌ Помилка: " + (data.detail || "Невірний ключ");
                 }
             } catch (e) {
-                alert("Помилка збереження: " + e);
+                sDiv.className = "sync-status error";
+                sDiv.innerText = "❌ Помилка з'єднання: " + e;
             }
         }
 

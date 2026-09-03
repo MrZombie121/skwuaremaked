@@ -30,6 +30,7 @@ from core.deduplicator import ThreatDeduplicator
 from core.telegram_service import TelegramService
 from core.simulator import TacticalSimulator
 from core.neptun_service import NeptunApiService
+from core.turso_db import turso_db
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("SkyWatch.Server")
@@ -235,6 +236,14 @@ async def kinematic_loop():
 @app.on_event("startup")
 async def startup_event():
     global telegram_service, simulator, neptun_service
+    
+    # Initialize Turso Cloud Schema & Sync Maintenance
+    try:
+        await turso_db.init_schema()
+        await turso_db.get_maintenance_state()
+    except Exception as te:
+        logger.warning(f"Turso initialization notice: {te}")
+
     telegram_service = TelegramService(message_callback=on_message_received)
     simulator = TacticalSimulator(message_callback=on_message_received)
     neptun_service = NeptunApiService(event_callback=on_neptun_event_received)
@@ -258,9 +267,9 @@ async def shutdown_event():
 
 @app.get("/")
 async def root():
-    # Check persistent maintenance mode from JSON database
-    is_maint = db.get_setting("maintenance_mode", "false").lower() == "true"
-    if is_maint:
+    # Check persistent maintenance mode from Turso / Database
+    state = await turso_db.get_maintenance_state()
+    if state.get("maintenance_mode", False):
         return FileResponse(os.path.join(UI_DIR, "maintenance.html"))
     return FileResponse(os.path.join(UI_DIR, "index.html"))
 
@@ -273,17 +282,14 @@ async def admin_page(key: Optional[str] = None):
 
 @app.get("/api/maintenance/status")
 async def get_maintenance_status():
-    is_maint = db.get_setting("maintenance_mode", "false").lower() == "true"
-    reason = db.get_setting("maintenance_reason", "Тривають технічні роботи.")
-    return {
-        "maintenance_mode": is_maint,
-        "reason": reason
-    }
+    state = await turso_db.get_maintenance_state()
+    return state
 
 class MaintenanceToggleRequest(BaseModel):
     key: str
     enabled: bool
     reason: Optional[str] = None
+    end_timestamp: Optional[int] = None
 
 @app.post("/api/admin/maintenance")
 async def toggle_maintenance_mode(req: MaintenanceToggleRequest):
@@ -291,14 +297,21 @@ async def toggle_maintenance_mode(req: MaintenanceToggleRequest):
     if req.key != expected_key:
         raise HTTPException(status_code=403, detail="Невірний секретний ключ адміністратора")
     
-    db.set_setting("maintenance_mode", "true" if req.enabled else "false")
-    if req.reason:
-        db.set_setting("maintenance_reason", req.reason)
-        
+    current_state = await turso_db.get_maintenance_state()
+    reason = req.reason if req.reason is not None else current_state.get("reason", "Тривають технічні роботи.")
+    end_ts = req.end_timestamp if req.end_timestamp is not None else current_state.get("end_timestamp", 0)
+
+    await turso_db.set_maintenance_state(
+        is_enabled=req.enabled,
+        reason=reason,
+        end_timestamp=end_ts
+    )
+    
     return {
         "status": "ok",
         "maintenance_mode": req.enabled,
-        "reason": db.get_setting("maintenance_reason")
+        "reason": reason,
+        "end_timestamp": end_ts
     }
 
 @app.get("/health")
