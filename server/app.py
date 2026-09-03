@@ -412,10 +412,11 @@ class TelegramCodeRequest(BaseModel):
 
 @app.post("/api/telegram/request-code")
 async def request_telegram_code(req: TelegramCodeRequest):
+    global telegram_service
     if not telegram_service:
-        raise HTTPException(status_code=500, detail="Telegram service not running")
+        telegram_service = TelegramService(message_callback=on_message_received)
     result = await telegram_service.request_auth_code(req.api_id, req.api_hash, req.phone)
-    return result
+    return JSONResponse(content=result)
 
 class TelegramLoginSubmit(BaseModel):
     code: str
@@ -423,10 +424,11 @@ class TelegramLoginSubmit(BaseModel):
 
 @app.post("/api/telegram/login")
 async def login_telegram(req: TelegramLoginSubmit):
+    global telegram_service
     if not telegram_service:
-        raise HTTPException(status_code=500, detail="Telegram service not running")
+        telegram_service = TelegramService(message_callback=on_message_received)
     result = await telegram_service.submit_auth_code(req.code, req.password_2fa)
-    return result
+    return JSONResponse(content=result)
 
 # --- TARGETS, STATS & CONTROL API ---
 

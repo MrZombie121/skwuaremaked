@@ -615,7 +615,16 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ api_id: apiId, api_hash: apiHash, phone: phone })
                 });
-                const data = await resp.json();
+                
+                const text = await resp.text();
+                let data;
+                try {
+                    data = JSON.parse(text);
+                } catch (pe) {
+                    sDiv.className = "sync-status error";
+                    sDiv.innerText = `❌ Відповідь сервера: ${text || resp.statusText}`;
+                    return;
+                }
 
                 if (data.status === 'code_sent') {
                     sDiv.className = "sync-status success";
@@ -623,7 +632,7 @@
                     document.getElementById('admin-tg-sub-form').style.display = 'flex';
                 } else {
                     sDiv.className = "sync-status error";
-                    sDiv.innerText = `❌ Помилка: ${data.message || 'Не вдалося надіслати код'}`;
+                    sDiv.innerText = `❌ Помилка: ${data.message || data.detail || 'Не вдалося надіслати код'}`;
                 }
             } catch (err) {
                 sDiv.className = "sync-status error";
@@ -651,7 +660,16 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ code: code, password_2fa: pwd || null })
                 });
-                const data = await resp.json();
+                
+                const text = await resp.text();
+                let data;
+                try {
+                    data = JSON.parse(text);
+                } catch (pe) {
+                    sDiv.className = "sync-status error";
+                    sDiv.innerText = `❌ Відповідь сервера: ${text || resp.statusText}`;
+                    return;
+                }
 
                 if (data.status === 'success') {
                     sDiv.className = "sync-status success";
@@ -666,7 +684,7 @@
                     document.getElementById('adm-group-2fa').style.display = 'block';
                 } else {
                     sDiv.className = "sync-status error";
-                    sDiv.innerText = `❌ Помилка: ${data.message || 'Невірний код'}`;
+                    sDiv.innerText = `❌ Помилка: ${data.message || data.detail || 'Невірний код'}`;
                 }
             } catch (err) {
                 sDiv.className = "sync-status error";
