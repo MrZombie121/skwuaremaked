@@ -19,14 +19,132 @@ let ws = null;
 let logCount = 0;
 let channelsList = [];
 let lastAnimTimestamp = performance.now();
-let showHazardCones = true;
-let showRangeRings = true;
-let showTrails = true;
-let showVectors = true;
-let speedMultiplier = 1.0;
-let soundMissileEnabled = true;
-let soundUavEnabled = true;
-let soundKillEnabled = true;
+// LocalStorage User Preferences Manager
+const USER_PREFS_KEY = "skywatch_user_prefs_v2";
+
+function saveUserPreferences() {
+    try {
+        const prefs = {
+            isAudioEnabled: isAudioEnabled,
+            audioVolume: audioVolume,
+            currentBaseLayer: currentBaseLayer,
+            showHazardCones: showHazardCones,
+            showRangeRings: showRangeRings,
+            showTrails: showTrails,
+            showVectors: showVectors,
+            speedMultiplier: speedMultiplier,
+            soundMissileEnabled: soundMissileEnabled,
+            soundUavEnabled: soundUavEnabled,
+            soundKillEnabled: soundKillEnabled,
+            sweepEnabled: document.getElementById('set-sweep-toggle')?.checked ?? true,
+            circlingTime: document.getElementById('set-circling-time')?.value ?? "6",
+            targetTtl: document.getElementById('set-target-ttl')?.value ?? "900"
+        };
+        localStorage.setItem(USER_PREFS_KEY, JSON.stringify(prefs));
+    } catch (e) {
+        console.warn("Error saving to localStorage:", e);
+    }
+}
+
+function loadUserPreferences() {
+    try {
+        const raw = localStorage.getItem(USER_PREFS_KEY);
+        if (!raw) return;
+        const prefs = JSON.parse(raw);
+
+        if (prefs.isAudioEnabled !== undefined) {
+            isAudioEnabled = prefs.isAudioEnabled;
+            const btnSound = document.getElementById('btn-sound');
+            if (btnSound) {
+                btnSound.className = `hud-btn ${isAudioEnabled ? 'active' : ''}`;
+                btnSound.innerHTML = `<span class="btn-icon">${isAudioEnabled ? '🔊' : '🔇'}</span> AUDIO: ${isAudioEnabled ? 'ON' : 'OFF'}`;
+            }
+        }
+
+        if (prefs.audioVolume !== undefined) {
+            audioVolume = parseFloat(prefs.audioVolume);
+            const volInput = document.getElementById('set-volume');
+            const volPct = document.getElementById('vol-pct');
+            if (volInput) volInput.value = Math.round(audioVolume * 100);
+            if (volPct) volPct.innerText = `${Math.round(audioVolume * 100)}%`;
+        }
+
+        if (prefs.currentBaseLayer) {
+            switchBaseLayer(prefs.currentBaseLayer);
+            document.querySelectorAll('.map-layer-selector .layer-btn').forEach(b => {
+                b.classList.toggle('active', b.getAttribute('data-layer') === prefs.currentBaseLayer);
+            });
+        }
+
+        if (prefs.showHazardCones !== undefined) {
+            showHazardCones = prefs.showHazardCones;
+            const el = document.getElementById('set-cones-toggle');
+            if (el) el.checked = showHazardCones;
+        }
+
+        if (prefs.showRangeRings !== undefined) {
+            showRangeRings = prefs.showRangeRings;
+            const el = document.getElementById('set-rings-toggle');
+            if (el) el.checked = showRangeRings;
+            toggleRangeRings(showRangeRings);
+        }
+
+        if (prefs.showTrails !== undefined) {
+            showTrails = prefs.showTrails;
+            const el = document.getElementById('set-trails-toggle');
+            if (el) el.checked = showTrails;
+        }
+
+        if (prefs.showVectors !== undefined) {
+            showVectors = prefs.showVectors;
+            const el = document.getElementById('set-vectors-toggle');
+            if (el) el.checked = showVectors;
+        }
+
+        if (prefs.speedMultiplier !== undefined) {
+            speedMultiplier = parseFloat(prefs.speedMultiplier);
+            const el = document.getElementById('set-speed-mult');
+            if (el) el.value = String(prefs.speedMultiplier);
+        }
+
+        if (prefs.soundMissileEnabled !== undefined) {
+            soundMissileEnabled = prefs.soundMissileEnabled;
+            const el = document.getElementById('set-sound-missile');
+            if (el) el.checked = soundMissileEnabled;
+        }
+
+        if (prefs.soundUavEnabled !== undefined) {
+            soundUavEnabled = prefs.soundUavEnabled;
+            const el = document.getElementById('set-sound-uav');
+            if (el) el.checked = soundUavEnabled;
+        }
+
+        if (prefs.soundKillEnabled !== undefined) {
+            soundKillEnabled = prefs.soundKillEnabled;
+            const el = document.getElementById('set-sound-kill');
+            if (el) el.checked = soundKillEnabled;
+        }
+
+        if (prefs.sweepEnabled !== undefined) {
+            const overlay = document.getElementById('radar-sweep-overlay');
+            const el = document.getElementById('set-sweep-toggle');
+            if (el) el.checked = prefs.sweepEnabled;
+            if (overlay) overlay.style.display = prefs.sweepEnabled ? 'block' : 'none';
+        }
+
+        if (prefs.circlingTime) {
+            const el = document.getElementById('set-circling-time');
+            if (el) el.value = prefs.circlingTime;
+        }
+
+        if (prefs.targetTtl) {
+            const el = document.getElementById('set-target-ttl');
+            if (el) el.value = prefs.targetTtl;
+        }
+    } catch (e) {
+        console.warn("Error loading from localStorage:", e);
+    }
+}
 let rangeRingsLayers = [];
 let simulatorActive = false;
 let neptunActive = false;
@@ -860,14 +978,15 @@ function setupEventListeners() {
         btnSound.className = `hud-btn ${isAudioEnabled ? 'active' : ''}`;
         btnSound.innerHTML = `<span class="btn-icon">${isAudioEnabled ? '🔊' : '🔇'}</span> AUDIO: ${isAudioEnabled ? 'ON' : 'OFF'}`;
         if (isAudioEnabled) soundFx.playTone(880, 0.1);
+        saveUserPreferences();
     });
 
     // Modals
-    document.getElementById('btn-channels-modal').addEventListener('click', () => openModal('modal-channels'));
-    document.getElementById('btn-auth-modal').addEventListener('click', () => openModal('modal-auth'));
-    document.getElementById('btn-settings-modal').addEventListener('click', () => openModal('modal-settings'));
-    document.getElementById('btn-simulator-toggle').addEventListener('click', toggleSimulator);
-    document.getElementById('btn-neptun-toggle').addEventListener('click', toggleNeptun);
+    document.getElementById('btn-channels-modal')?.addEventListener('click', () => openModal('modal-channels'));
+    document.getElementById('btn-auth-modal')?.addEventListener('click', () => openModal('modal-auth'));
+    document.getElementById('btn-settings-modal')?.addEventListener('click', () => openModal('modal-settings'));
+    document.getElementById('btn-simulator-toggle')?.addEventListener('click', toggleSimulator);
+    document.getElementById('btn-neptun-toggle')?.addEventListener('click', toggleNeptun);
 
     // Clear All
     document.getElementById('btn-clear').addEventListener('click', async () => {
@@ -938,18 +1057,20 @@ function setupEventListeners() {
             document.querySelectorAll('.map-layer-selector .layer-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             switchBaseLayer(btn.getAttribute('data-layer'));
+            saveUserPreferences();
         });
     });
 
     // Preset Buttons for Quick Testing
     document.querySelectorAll('.preset-buttons .preset-btn').forEach(btn => {
         btn.addEventListener('click', () => {
-            document.getElementById('inject-text').value = btn.getAttribute('data-text');
+            const input = document.getElementById('inject-text');
+            if (input) input.value = btn.getAttribute('data-text');
         });
     });
 
     // Injector Form
-    document.getElementById('injector-form').addEventListener('submit', async (e) => {
+    document.getElementById('injector-form')?.addEventListener('submit', async (e) => {
         e.preventDefault();
         const channel = document.getElementById('inject-channel').value;
         const text = document.getElementById('inject-text').value;
@@ -968,7 +1089,7 @@ function setupEventListeners() {
     });
 
     // Folder Sync Form
-    document.getElementById('form-folder-sync').addEventListener('submit', async (e) => {
+    document.getElementById('form-folder-sync')?.addEventListener('submit', async (e) => {
         e.preventDefault();
         const folderUrl = document.getElementById('input-folder-url').value.trim();
         const statusDiv = document.getElementById('folder-sync-status');
@@ -1006,7 +1127,7 @@ function setupEventListeners() {
     });
 
     // Add Channel Form
-    document.getElementById('form-add-channel').addEventListener('submit', async (e) => {
+    document.getElementById('form-add-channel')?.addEventListener('submit', async (e) => {
         e.preventDefault();
         const title = document.getElementById('add-channel-title').value.trim();
         const username = document.getElementById('add-channel-username').value.trim();
@@ -1026,7 +1147,7 @@ function setupEventListeners() {
     });
 
     // Telegram Request Code Form
-    document.getElementById('form-tg-request-code').addEventListener('submit', async (e) => {
+    document.getElementById('form-tg-request-code')?.addEventListener('submit', async (e) => {
         e.preventDefault();
         const apiId = parseInt(document.getElementById('tg-api-id').value);
         const apiHash = document.getElementById('tg-api-hash').value.trim();
@@ -1063,7 +1184,7 @@ function setupEventListeners() {
     });
 
     // Telegram Submit Code Form
-    document.getElementById('form-tg-submit-code').addEventListener('submit', async (e) => {
+    document.getElementById('form-tg-submit-code')?.addEventListener('submit', async (e) => {
         e.preventDefault();
         const code = document.getElementById('tg-code').value.trim();
         const pwd = document.getElementById('tg-password-2fa').value.trim();
@@ -1108,47 +1229,65 @@ function setupEventListeners() {
     document.getElementById('set-sweep-toggle').addEventListener('change', (e) => {
         const overlay = document.getElementById('radar-sweep-overlay');
         if (overlay) overlay.style.display = e.target.checked ? 'block' : 'none';
+        saveUserPreferences();
     });
 
     document.getElementById('set-cones-toggle').addEventListener('change', (e) => {
         showHazardCones = e.target.checked;
         renderTargetsOnMap(activeTargets);
+        saveUserPreferences();
     });
 
     document.getElementById('set-rings-toggle').addEventListener('change', (e) => {
         toggleRangeRings(e.target.checked);
+        saveUserPreferences();
     });
 
     document.getElementById('set-trails-toggle').addEventListener('change', (e) => {
         showTrails = e.target.checked;
         renderTargetsOnMap(activeTargets);
+        saveUserPreferences();
     });
 
     document.getElementById('set-vectors-toggle').addEventListener('change', (e) => {
         showVectors = e.target.checked;
         renderTargetsOnMap(activeTargets);
+        saveUserPreferences();
     });
 
     document.getElementById('set-speed-mult').addEventListener('change', (e) => {
         speedMultiplier = parseFloat(e.target.value) || 1.0;
+        saveUserPreferences();
+    });
+
+    document.getElementById('set-circling-time')?.addEventListener('change', () => {
+        saveUserPreferences();
+    });
+
+    document.getElementById('set-target-ttl')?.addEventListener('change', () => {
+        saveUserPreferences();
     });
 
     document.getElementById('set-volume').addEventListener('input', (e) => {
         audioVolume = parseFloat(e.target.value) / 100.0;
         const pctEl = document.getElementById('vol-pct');
         if (pctEl) pctEl.innerText = `${Math.round(audioVolume * 100)}%`;
+        saveUserPreferences();
     });
 
     document.getElementById('set-sound-missile').addEventListener('change', (e) => {
         soundMissileEnabled = e.target.checked;
+        saveUserPreferences();
     });
 
     document.getElementById('set-sound-uav').addEventListener('change', (e) => {
         soundUavEnabled = e.target.checked;
+        saveUserPreferences();
     });
 
     document.getElementById('set-sound-kill').addEventListener('change', (e) => {
         soundKillEnabled = e.target.checked;
+        saveUserPreferences();
     });
 
     // Kyiv Time Clock
@@ -1162,6 +1301,7 @@ function setupEventListeners() {
 // Bootstrap
 document.addEventListener('DOMContentLoaded', () => {
     initMap();
+    loadUserPreferences();
     setupEventListeners();
     fetchAndRenderChannels();
     fetchTelegramStatus();

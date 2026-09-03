@@ -31,6 +31,10 @@ DEDUPLICATION_RADIUS_KM = 45.0          # Max distance to correlate into the sam
 DEDUPLICATION_TIME_WINDOW_SEC = 600      # 10 minutes time window for message correlation
 TARGET_TTL_SECONDS = 900                # 15 minutes without updates before marking inactive/clearing
 
+# Admin & Maintenance System Settings
+ADMIN_SECRET_KEY = os.getenv("ADMIN_SECRET_KEY", "skywatch-secret-key-2026")
+MAINTENANCE_MODE_DEFAULT = False
+
 # Kinematics & Loitering Parameters
 CIRCLING_DURATION_SEC = 6.0              # Circles over target upon arrival before fading out
 CIRCLING_RADIUS_KM = 0.65                # Orbit radius in km over the destination city

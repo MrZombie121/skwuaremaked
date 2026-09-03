@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SKYWATCH — ТЕХНІЧНІ РОБОТИ</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&family=Orbitron:wght@700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #05080c;
+            --border-color: #1a2738;
+            --text-main: #c3ced9;
+            --text-bright: #f0f6fc;
+            --color-orange: #ff9100;
+            --color-cyan: #00e5ff;
+            --color-red: #ff2a4b;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            font-family: 'JetBrains Mono', monospace;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            overflow: hidden;
+            background-image: 
+                radial-gradient(circle at 50% 50%, rgba(255, 145, 0, 0.04) 0%, transparent 60%),
+                linear-gradient(rgba(26, 39, 56, 0.2) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(26, 39, 56, 0.2) 1px, transparent 1px);
+            background-size: 100% 100%, 40px 40px, 40px 40px;
+        }
+
+        .maint-card {
+            background: rgba(10, 15, 22, 0.95);
+            border: 2px solid var(--border-color);
+            border-top: 4px solid var(--color-orange);
+            box-shadow: 0 10px 50px rgba(0, 0, 0, 0.9), 0 0 30px rgba(255, 145, 0, 0.15);
+            border-radius: 6px;
+            max-width: 620px;
+            width: 100%;
+            padding: 36px 32px;
+            text-align: center;
+            position: relative;
+        }
+
+        .pulse-icon {
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            background: rgba(255, 145, 0, 0.15);
+            border: 2px solid var(--color-orange);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            margin: 0 auto 20px auto;
+            box-shadow: 0 0 20px rgba(255, 145, 0, 0.3);
+            animation: pulseGlow 2s infinite ease-in-out;
+        }
+
+        @keyframes pulseGlow {
+            0% { transform: scale(0.95); box-shadow: 0 0 10px rgba(255, 145, 0, 0.3); }
+            50% { transform: scale(1.05); box-shadow: 0 0 25px rgba(255, 145, 0, 0.6); }
+            100% { transform: scale(0.95); box-shadow: 0 0 10px rgba(255, 145, 0, 0.3); }
+        }
+
+        h1 {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 20px;
+            font-weight: 900;
+            color: var(--text-bright);
+            letter-spacing: 2px;
+            margin-bottom: 12px;
+        }
+
+        .badge-tag {
+            font-size: 10px;
+            background: rgba(255, 145, 0, 0.2);
+            color: var(--color-orange);
+            padding: 3px 8px;
+            border-radius: 3px;
+            border: 1px solid var(--color-orange);
+            display: inline-block;
+            margin-bottom: 18px;
+            font-weight: 800;
+            letter-spacing: 1px;
+        }
+
+        p {
+            font-size: 13px;
+            line-height: 1.6;
+            color: var(--text-main);
+            margin-bottom: 24px;
+        }
+
+        .status-box {
+            background: #06090e;
+            border: 1px solid var(--border-color);
+            padding: 12px;
+            border-radius: 4px;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 12px;
+            color: var(--color-cyan);
+            margin-bottom: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-around;
+        }
+
+        .retry-btn {
+            background: transparent;
+            border: 1px solid var(--color-cyan);
+            color: var(--color-cyan);
+            padding: 9px 20px;
+            border-radius: 4px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .retry-btn:hover {
+            background: var(--color-cyan);
+            color: #000;
+            box-shadow: 0 0 15px rgba(0, 229, 255, 0.4);
+        }
+    </style>
+</head>
+<body>
+    <div class="maint-card">
+        <div class="pulse-icon">🛠️</div>
+        <h1>SKYWATCH RADAR</h1>
+        <div class="badge-tag">РЕЖИМ ТЕХНІЧНОГО ОБСЛУГОВУВАННЯ</div>
+        <p id="maint-reason">Тривають планові технічні роботи з оновлення тактичного ядра та серверних модулів. Доступ до карти тимчасово обмежено адміністратором.</p>
+        
+        <div class="status-box">
+            <span>СИСТЕМА: ОНОВЛЕННЯ</span>
+            <span>СТАТУС: ТЕХ РОБОТИ</span>
+            <span id="auto-check-timer">ПЕРЕВІРКА: 15с</span>
+        </div>
+
+        <button class="retry-btn" onclick="window.location.reload()">🔄 ПЕРЕВІРИТИ ДОСТУПНІСТЬ</button>
+    </div>
+
+    <script>
+        let countdown = 15;
+        setInterval(() => {
+            countdown--;
+            document.getElementById('auto-check-timer').innerText = `ПЕРЕВІРКА: ${countdown}с`;
+            if (countdown <= 0) {
+                countdown = 15;
+                fetch('/api/maintenance/status').then(r => r.json()).then(data => {
+                    if (!data.maintenance_mode) {
+                        window.location.reload();
+                    }
+                }).catch(() => {});
+            }
+        }, 1000);
+    </script>
+</body>
+</html>

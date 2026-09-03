@@ -51,9 +51,27 @@ class JsonDatabase:
                 "tg_api_id": "",
                 "tg_api_hash": "",
                 "tg_phone": "",
-                "session_string": ""
+                "session_string": "",
+                "maintenance_mode": "false",
+                "maintenance_reason": "Тривають технічні роботи з оновлення серверного ядра. Моніторинг скоро відновиться.",
+                "admin_secret_key": "skywatch-secret-key-2026"
             }
             self._write_json(SETTINGS_FILE, default_settings)
+        else:
+            # Ensure maintenance keys exist in settings.json
+            settings = self._read_json(SETTINGS_FILE, {})
+            updated = False
+            if "maintenance_mode" not in settings:
+                settings["maintenance_mode"] = "false"
+                updated = True
+            if "maintenance_reason" not in settings:
+                settings["maintenance_reason"] = "Тривають технічні роботи з оновлення серверного ядра. Моніторинг скоро відновиться."
+                updated = True
+            if "admin_secret_key" not in settings:
+                settings["admin_secret_key"] = "skywatch-secret-key-2026"
+                updated = True
+            if updated:
+                self._write_json(SETTINGS_FILE, settings)
 
         # 2. Channels JSON
         if not os.path.exists(CHANNELS_FILE):

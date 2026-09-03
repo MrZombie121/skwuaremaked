@@ -258,7 +258,48 @@ async def shutdown_event():
 
 @app.get("/")
 async def root():
+    # Check persistent maintenance mode from JSON database
+    is_maint = db.get_setting("maintenance_mode", "false").lower() == "true"
+    if is_maint:
+        return FileResponse(os.path.join(UI_DIR, "maintenance.html"))
     return FileResponse(os.path.join(UI_DIR, "index.html"))
+
+@app.get("/system-control-panel")
+async def admin_page(key: Optional[str] = None):
+    expected_key = db.get_setting("admin_secret_key") or config.ADMIN_SECRET_KEY
+    if not key or key != expected_key:
+        raise HTTPException(status_code=403, detail="Доступ заборонено: невірний ключ доступу")
+    return FileResponse(os.path.join(UI_DIR, "admin.html"))
+
+@app.get("/api/maintenance/status")
+async def get_maintenance_status():
+    is_maint = db.get_setting("maintenance_mode", "false").lower() == "true"
+    reason = db.get_setting("maintenance_reason", "Тривають технічні роботи.")
+    return {
+        "maintenance_mode": is_maint,
+        "reason": reason
+    }
+
+class MaintenanceToggleRequest(BaseModel):
+    key: str
+    enabled: bool
+    reason: Optional[str] = None
+
+@app.post("/api/admin/maintenance")
+async def toggle_maintenance_mode(req: MaintenanceToggleRequest):
+    expected_key = db.get_setting("admin_secret_key") or config.ADMIN_SECRET_KEY
+    if req.key != expected_key:
+        raise HTTPException(status_code=403, detail="Невірний секретний ключ адміністратора")
+    
+    db.set_setting("maintenance_mode", "true" if req.enabled else "false")
+    if req.reason:
+        db.set_setting("maintenance_reason", req.reason)
+        
+    return {
+        "status": "ok",
+        "maintenance_mode": req.enabled,
+        "reason": db.get_setting("maintenance_reason")
+    }
 
 @app.get("/health")
 async def health_check():
