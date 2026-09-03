@@ -269,16 +269,41 @@
             <!-- 3. Telegram Channels & Folder Box -->
             <div class="admin-card" style="border-top: 3px solid #00ff88;">
                 <div class="card-title">
-                    <span>📁 КАНАЛИ ТЕЛЕГРАМ ТА ПАПКА</span>
+                    <span>📁 ТЕЛЕГРАМ АВТОРИЗАЦІЯ ТА КАНАЛИ</span>
                     <span id="tg-auth-badge" class="status-badge" style="background: rgba(0,255,136,0.15); color: #00ff88;">ONLINE</span>
                 </div>
 
-                <div style="font-size: 11px; color: #c3ced9; line-height: 1.5;">
+                <div style="font-size: 11px; color: #c3ced9; line-height: 1.5; background: #06090e; padding: 10px; border-radius: 4px; border: 1px solid #1a2738;">
                     <div>• <b>Підключений акаунт:</b> <span id="tg-user-label" class="text-green">Завантаження...</span></div>
                     <div>• <b>Моніторинг каналів:</b> <span id="tg-channels-count" class="text-cyan">0</span> каналів</div>
                 </div>
 
-                <form id="admin-folder-form" style="display: flex; gap: 6px; margin-top: 6px;">
+                <!-- Re-Auth Toggle Button -->
+                <button type="button" class="hud-btn highlight" style="width: 100%;" onclick="toggleAuthForm()">
+                    🔑 АВТОРИЗУВАТИ / ЗМІНИТИ АКАУНТ TELEGRAM
+                </button>
+
+                <!-- Telegram Auth Sub-form -->
+                <div id="admin-tg-auth-block" style="display: none; flex-direction: column; gap: 8px; background: #06090e; padding: 12px; border-radius: 4px; border: 1px dashed #00e5ff;">
+                    <div style="font-size: 10.5px; color: #00e5ff; font-weight: 800;">📲 ВВЕДІТЬ TELEGRAM ДАНІ (з my.telegram.org):</div>
+                    <form id="admin-tg-req-form" style="display: flex; flex-direction: column; gap: 6px;">
+                        <input type="number" id="adm-tg-api-id" class="hud-input" placeholder="API ID (напр. 20400123)" required>
+                        <input type="text" id="adm-tg-api-hash" class="hud-input" placeholder="API HASH" required>
+                        <input type="tel" id="adm-tg-phone" class="hud-input" placeholder="Номер телефону (+380...)" required>
+                        <button type="submit" class="hud-btn highlight" id="btn-adm-send-code">📲 НАДІСЛАТИ КОД</button>
+                    </form>
+
+                    <form id="admin-tg-sub-form" style="display: none; flex-direction: column; gap: 6px; margin-top: 6px;">
+                        <input type="text" id="adm-tg-code" class="hud-input" placeholder="Код з Telegram / SMS" required>
+                        <div id="adm-group-2fa" style="display: none;">
+                            <input type="password" id="adm-tg-pwd" class="hud-input" placeholder="Хмарний пароль 2FA">
+                        </div>
+                        <button type="submit" class="hud-btn submit-btn" id="btn-adm-login">🔐 УВІЙТИ В АКАУНТ</button>
+                    </form>
+                    <div id="adm-auth-status" class="sync-status"></div>
+                </div>
+
+                <form id="admin-folder-form" style="display: flex; gap: 6px; margin-top: 4px;">
                     <input type="text" id="admin-folder-url" class="hud-input" value="https://t.me/addlist/syGYtBj5T9AxNzIy" required>
                     <button type="submit" class="hud-btn highlight">🔄 СИНХР. ПАПКУ</button>
                 </form>
@@ -561,6 +586,94 @@
             } catch (err) {
                 sDiv.className = "sync-status error";
                 sDiv.innerText = "❌ Помилка: " + err;
+            }
+        });
+
+        function toggleAuthForm() {
+            const el = document.getElementById('admin-tg-auth-block');
+            el.style.display = el.style.display === 'none' ? 'flex' : 'none';
+        }
+
+        // Telegram Admin Request Code
+        document.getElementById('admin-tg-req-form')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const apiId = parseInt(document.getElementById('adm-tg-api-id').value);
+            const apiHash = document.getElementById('adm-tg-api-hash').value.trim();
+            const phone = document.getElementById('adm-tg-phone').value.trim();
+            const sDiv = document.getElementById('adm-auth-status');
+            const btn = document.getElementById('btn-adm-send-code');
+
+            btn.disabled = true;
+            btn.innerText = "⏳ Відправка коду...";
+            sDiv.style.display = "block";
+            sDiv.className = "sync-status";
+            sDiv.innerText = "Відправка запиту в Telegram...";
+
+            try {
+                const resp = await fetch('/api/telegram/request-code', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ api_id: apiId, api_hash: apiHash, phone: phone })
+                });
+                const data = await resp.json();
+
+                if (data.status === 'code_sent') {
+                    sDiv.className = "sync-status success";
+                    sDiv.innerText = `📲 Код відправлено на номер ${phone}. Введіть його нижче:`;
+                    document.getElementById('admin-tg-sub-form').style.display = 'flex';
+                } else {
+                    sDiv.className = "sync-status error";
+                    sDiv.innerText = `❌ Помилка: ${data.message || 'Не вдалося надіслати код'}`;
+                }
+            } catch (err) {
+                sDiv.className = "sync-status error";
+                sDiv.innerText = `❌ Помилка: ${err}`;
+            } finally {
+                btn.disabled = false;
+                btn.innerText = "📲 НАДІСЛАТИ КОД";
+            }
+        });
+
+        // Telegram Admin Submit Code
+        document.getElementById('admin-tg-sub-form')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const code = document.getElementById('adm-tg-code').value.trim();
+            const pwd = document.getElementById('adm-tg-pwd').value.trim();
+            const sDiv = document.getElementById('adm-auth-status');
+            const btn = document.getElementById('btn-adm-login');
+
+            btn.disabled = true;
+            btn.innerText = "⏳ Авторизація...";
+
+            try {
+                const resp = await fetch('/api/telegram/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ code: code, password_2fa: pwd || null })
+                });
+                const data = await resp.json();
+
+                if (data.status === 'success') {
+                    sDiv.className = "sync-status success";
+                    sDiv.innerText = `✅ Успішна авторизація! Підключено: ${data.user.first_name} (@${data.user.username || data.user.phone}).`;
+                    fetchAdminData();
+                    setTimeout(() => {
+                        document.getElementById('admin-tg-auth-block').style.display = 'none';
+                    }, 2500);
+                } else if (data.status === '2fa_required') {
+                    sDiv.className = "sync-status error";
+                    sDiv.innerText = "🔒 Потрібен хмарний пароль 2FA. Введіть пароль нижче.";
+                    document.getElementById('adm-group-2fa').style.display = 'block';
+                } else {
+                    sDiv.className = "sync-status error";
+                    sDiv.innerText = `❌ Помилка: ${data.message || 'Невірний код'}`;
+                }
+            } catch (err) {
+                sDiv.className = "sync-status error";
+                sDiv.innerText = `❌ Помилка: ${err}`;
+            } finally {
+                btn.disabled = false;
+                btn.innerText = "🔐 УВІЙТИ В АКАУНТ";
             }
         });
 
