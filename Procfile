@@ -1,1 +1,1 @@
-web: python web_app.py --host 0.0.0.0 --port $PORT --no-browser
+web: uvicorn server.app:app --host 0.0.0.0 --port $PORT

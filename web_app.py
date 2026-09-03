@@ -54,8 +54,8 @@ def print_banner(host: str, port: int):
 
 def main():
     parser = argparse.ArgumentParser(description="SkyWatch Web Version Runner")
-    parser.add_argument("--host", default=config.SERVER_HOST, help="Host IP to bind (default: 0.0.0.0)")
-    parser.add_argument("--port", type=int, default=config.SERVER_PORT, help="Port to listen on (default: 8080)")
+    parser.add_argument("--host", default=os.getenv("HOST", config.SERVER_HOST), help="Host IP to bind (default: 0.0.0.0)")
+    parser.add_argument("--port", type=int, default=int(os.getenv("PORT", str(config.SERVER_PORT))), help="Port to listen on (default: 8080)")
     parser.add_argument("--no-browser", action="store_true", help="Do not automatically open web browser")
     parser.add_argument("--reload", action="store_true", help="Enable auto-reload for development")
 
@@ -63,12 +63,15 @@ def main():
 
     print_banner(args.host, args.port)
 
-    # Open browser automatically if not disabled and running locally
-    if not args.no_browser:
+    # Open browser automatically only if locally run on desktop and display available
+    if not args.no_browser and "PORT" not in os.environ and "RENDER" not in os.environ:
         target_url = f"http://localhost:{args.port}"
         def open_browser():
             time.sleep(1.2)
-            webbrowser.open(target_url)
+            try:
+                webbrowser.open(target_url)
+            except Exception:
+                pass
         threading.Thread(target=open_browser, daemon=True).start()
 
     # Run Uvicorn Web Server
