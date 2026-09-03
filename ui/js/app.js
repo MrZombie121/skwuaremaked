@@ -883,15 +883,19 @@ async function fetchNeptunStatus() {
     }
 }
 
-// 11. Modal Dialog Handlers
+// Modal Dialog Handlers
 window.openModal = function(id) {
-    document.getElementById(id).style.display = 'flex';
-    if (id === 'modal-channels') fetchAndRenderChannels();
-    if (id === 'modal-auth') fetchTelegramStatus();
+    const el = document.getElementById(id);
+    if (el) {
+        el.style.display = 'flex';
+        if (id === 'modal-channels') fetchAndRenderChannels();
+        if (id === 'modal-auth') fetchTelegramStatus();
+    }
 };
 
 window.closeModal = function(id) {
-    document.getElementById(id).style.display = 'none';
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
 };
 
 // 12. WebSocket Connection Manager
@@ -1347,21 +1351,22 @@ function setupEventListeners() {
         saveUserPreferences();
     });
 
-    // Kyiv Time Clock
-    setInterval(() => {
-        const now = new Date();
-        const kyivTime = now.toLocaleTimeString('uk-UA', { timeZone: 'Europe/Kyiv' });
-        document.getElementById('kyiv-clock').innerText = `${kyivTime} KYIV`;
-    }, 1000);
-}
+// Update Live Kyiv Time Clock
+setInterval(() => {
+    const now = new Date();
+    const kyivTime = now.toLocaleTimeString('uk-UA', { timeZone: 'Europe/Kyiv' });
+    const clockEl = document.getElementById('kyiv-clock');
+    if (clockEl) clockEl.innerText = `${kyivTime} KYIV`;
+}, 1000);
 
 // Bootstrap
 document.addEventListener('DOMContentLoaded', () => {
-    initMap();
-    loadUserPreferences();
-    setupEventListeners();
-    fetchAndRenderChannels();
-    fetchTelegramStatus();
-    fetchNeptunStatus();
-    connectWebSocket();
+    try {
+        initMap();
+        loadUserPreferences();
+        setupEventListeners();
+        connectWebSocket();
+    } catch (e) {
+        console.error("Initialization error:", e);
+    }
 });
