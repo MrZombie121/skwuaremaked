@@ -4,11 +4,11 @@
  * hazard danger cones, orbital loiter mechanics, and real-time Telethon feeds.
  */
 
-// Global State
-let map;
+// Global State Variables (Declared first to avoid ReferenceErrors)
+let map = null;
 let baseLayers = {};
 let currentBaseLayer = 'dark';
-let markersMap = new Map(); // target_id -> { marker, vectorLine, trajectoryLine, hazardPolygon, currentPos: [lat, lon], targetData }
+let markersMap = new Map();
 let activeTargets = [];
 let currentFilter = "ALL";
 let isAudioEnabled = true;
@@ -19,135 +19,22 @@ let ws = null;
 let logCount = 0;
 let channelsList = [];
 let lastAnimTimestamp = performance.now();
-// LocalStorage User Preferences Manager
-const USER_PREFS_KEY = "skywatch_user_prefs_v2";
-
-function saveUserPreferences() {
-    try {
-        const prefs = {
-            isAudioEnabled: isAudioEnabled,
-            audioVolume: audioVolume,
-            currentBaseLayer: currentBaseLayer,
-            showHazardCones: showHazardCones,
-            showRangeRings: showRangeRings,
-            showTrails: showTrails,
-            showVectors: showVectors,
-            speedMultiplier: speedMultiplier,
-            soundMissileEnabled: soundMissileEnabled,
-            soundUavEnabled: soundUavEnabled,
-            soundKillEnabled: soundKillEnabled,
-            sweepEnabled: document.getElementById('set-sweep-toggle')?.checked ?? true,
-            circlingTime: document.getElementById('set-circling-time')?.value ?? "6",
-            targetTtl: document.getElementById('set-target-ttl')?.value ?? "900"
-        };
-        localStorage.setItem(USER_PREFS_KEY, JSON.stringify(prefs));
-    } catch (e) {
-        console.warn("Error saving to localStorage:", e);
-    }
-}
-
-function loadUserPreferences() {
-    try {
-        const raw = localStorage.getItem(USER_PREFS_KEY);
-        if (!raw) return;
-        const prefs = JSON.parse(raw);
-
-        if (prefs.isAudioEnabled !== undefined) {
-            isAudioEnabled = prefs.isAudioEnabled;
-            const btnSound = document.getElementById('btn-sound');
-            if (btnSound) {
-                btnSound.className = `hud-btn ${isAudioEnabled ? 'active' : ''}`;
-                btnSound.innerHTML = `<span class="btn-icon">${isAudioEnabled ? '🔊' : '🔇'}</span> AUDIO: ${isAudioEnabled ? 'ON' : 'OFF'}`;
-            }
-        }
-
-        if (prefs.audioVolume !== undefined) {
-            audioVolume = parseFloat(prefs.audioVolume);
-            const volInput = document.getElementById('set-volume');
-            const volPct = document.getElementById('vol-pct');
-            if (volInput) volInput.value = Math.round(audioVolume * 100);
-            if (volPct) volPct.innerText = `${Math.round(audioVolume * 100)}%`;
-        }
-
-        if (prefs.currentBaseLayer) {
-            switchBaseLayer(prefs.currentBaseLayer);
-            document.querySelectorAll('.map-layer-selector .layer-btn').forEach(b => {
-                b.classList.toggle('active', b.getAttribute('data-layer') === prefs.currentBaseLayer);
-            });
-        }
-
-        if (prefs.showHazardCones !== undefined) {
-            showHazardCones = prefs.showHazardCones;
-            const el = document.getElementById('set-cones-toggle');
-            if (el) el.checked = showHazardCones;
-        }
-
-        if (prefs.showRangeRings !== undefined) {
-            showRangeRings = prefs.showRangeRings;
-            const el = document.getElementById('set-rings-toggle');
-            if (el) el.checked = showRangeRings;
-            toggleRangeRings(showRangeRings);
-        }
-
-        if (prefs.showTrails !== undefined) {
-            showTrails = prefs.showTrails;
-            const el = document.getElementById('set-trails-toggle');
-            if (el) el.checked = showTrails;
-        }
-
-        if (prefs.showVectors !== undefined) {
-            showVectors = prefs.showVectors;
-            const el = document.getElementById('set-vectors-toggle');
-            if (el) el.checked = showVectors;
-        }
-
-        if (prefs.speedMultiplier !== undefined) {
-            speedMultiplier = parseFloat(prefs.speedMultiplier);
-            const el = document.getElementById('set-speed-mult');
-            if (el) el.value = String(prefs.speedMultiplier);
-        }
-
-        if (prefs.soundMissileEnabled !== undefined) {
-            soundMissileEnabled = prefs.soundMissileEnabled;
-            const el = document.getElementById('set-sound-missile');
-            if (el) el.checked = soundMissileEnabled;
-        }
-
-        if (prefs.soundUavEnabled !== undefined) {
-            soundUavEnabled = prefs.soundUavEnabled;
-            const el = document.getElementById('set-sound-uav');
-            if (el) el.checked = soundUavEnabled;
-        }
-
-        if (prefs.soundKillEnabled !== undefined) {
-            soundKillEnabled = prefs.soundKillEnabled;
-            const el = document.getElementById('set-sound-kill');
-            if (el) el.checked = soundKillEnabled;
-        }
-
-        if (prefs.sweepEnabled !== undefined) {
-            const overlay = document.getElementById('radar-sweep-overlay');
-            const el = document.getElementById('set-sweep-toggle');
-            if (el) el.checked = prefs.sweepEnabled;
-            if (overlay) overlay.style.display = prefs.sweepEnabled ? 'block' : 'none';
-        }
-
-        if (prefs.circlingTime) {
-            const el = document.getElementById('set-circling-time');
-            if (el) el.value = prefs.circlingTime;
-        }
-
-        if (prefs.targetTtl) {
-            const el = document.getElementById('set-target-ttl');
-            if (el) el.value = prefs.targetTtl;
-        }
-    } catch (e) {
-        console.warn("Error loading from localStorage:", e);
-    }
-}
 let rangeRingsLayers = [];
 let simulatorActive = false;
 let neptunActive = false;
+
+let showHazardCones = true;
+let showRangeRings = true;
+let showTrails = true;
+let showVectors = true;
+let speedMultiplier = 1.0;
+let soundMissileEnabled = true;
+let soundUavEnabled = true;
+let soundKillEnabled = true;
+let isWsConnected = false;
+let pollingInterval = null;
+
+const USER_PREFS_KEY = "skywatch_user_prefs_v2";
 
 // Web Audio Alert Synthesizer
 class RadarSoundFx {
@@ -157,8 +44,10 @@ class RadarSoundFx {
 
     init() {
         if (!this.ctx) {
-            const AudioCtx = window.AudioContext || window.webkitAudioContext;
-            this.ctx = new AudioCtx();
+            try {
+                const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                if (AudioCtx) this.ctx = new AudioCtx();
+            } catch (e) {}
         }
     }
 
@@ -166,6 +55,7 @@ class RadarSoundFx {
         if (!isAudioEnabled) return;
         try {
             this.init();
+            if (!this.ctx) return;
             if (this.ctx.state === 'suspended') {
                 this.ctx.resume();
             }
@@ -193,17 +83,14 @@ class RadarSoundFx {
     playNewThreatAlarm(targetType = "SHAHED") {
         if (targetType === "BALLISTIC" || targetType === "MISSILE" || targetType === "KAB") {
             if (!soundMissileEnabled) return;
-            // High-urgency double siren
             this.playTone(950, 0.18, "sawtooth", 0.2);
             setTimeout(() => this.playTone(1200, 0.22, "sawtooth", 0.25), 140);
         } else if (targetType === "JET_UAV") {
             if (!soundUavEnabled) return;
-            // Fast high-pitch chime
             this.playTone(740, 0.12, "triangle", 0.18);
             setTimeout(() => this.playTone(880, 0.15, "triangle", 0.2), 100);
         } else {
             if (!soundUavEnabled) return;
-            // Standard Shahed alert
             this.playTone(587, 0.12, "sine", 0.15);
             setTimeout(() => this.playTone(880, 0.16, "sine", 0.18), 120);
         }
@@ -220,6 +107,9 @@ const soundFx = new RadarSoundFx();
 
 // 1. Initialize Leaflet Map
 function initMap() {
+    const mapEl = document.getElementById('map');
+    if (!mapEl) return;
+
     const ukraineBounds = [
         [43.8, 21.5],
         [52.8, 40.5]
@@ -237,8 +127,7 @@ function initMap() {
 
     L.control.zoom({ position: 'topright' }).addTo(map);
 
-    // Tactical Map Layers (Google Maps Dark/Hybrid/Terrain + Esri Dark Canvas)
-    // Google Maps Dark Tactical Hybrid (no API key required)
+    // Google Maps Dark Tactical Hybrid
     baseLayers.dark = L.tileLayer('https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&hl=uk', {
         attribution: '&copy; Google Maps',
         subdomains: ['0', '1', '2', '3'],
@@ -246,7 +135,7 @@ function initMap() {
         maxZoom: 20
     });
 
-    // Google Maps Satellite / Hybrid Imagery
+    // Google Maps Satellite Imagery
     baseLayers.satellite = L.tileLayer('https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}&hl=uk', {
         attribution: '&copy; Google Maps Satellite Imagery',
         subdomains: ['0', '1', '2', '3'],
@@ -261,26 +150,32 @@ function initMap() {
         maxZoom: 20
     });
 
-    // Esri Military Dark Canvas (Alternative Tactical Layer)
+    // Esri Dark Canvas
     baseLayers.esriDark = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
         attribution: '&copy; Esri &copy; DeLorme, HERE',
         maxZoom: 16
     });
 
-    baseLayers.dark.addTo(map);
+    if (baseLayers[currentBaseLayer]) {
+        baseLayers[currentBaseLayer].addTo(map);
+    } else {
+        baseLayers.dark.addTo(map);
+    }
 
-    // Add Tactical Range Rings around key hubs
     createRangeRings();
 
     map.on('mousemove', (e) => {
-        document.getElementById('cursor-coords').innerText = 
-            `LAT: ${e.latlng.lat.toFixed(4)} | LON: ${e.latlng.lng.toFixed(4)} | ZOOM: ${map.getZoom().toFixed(1)}`;
+        const coordsEl = document.getElementById('cursor-coords');
+        if (coordsEl) {
+            coordsEl.innerText = `LAT: ${e.latlng.lat.toFixed(4)} | LON: ${e.latlng.lng.toFixed(4)} | ZOOM: ${map.getZoom().toFixed(1)}`;
+        }
     });
 
     requestAnimationFrame(flightAnimationLoop);
 }
 
 function switchBaseLayer(layerKey) {
+    if (!map) return;
     if (baseLayers[currentBaseLayer]) {
         map.removeLayer(baseLayers[currentBaseLayer]);
     }
@@ -291,6 +186,7 @@ function switchBaseLayer(layerKey) {
 }
 
 function createRangeRings() {
+    if (!map) return;
     const hubs = [
         [50.4501, 30.5234], // Kyiv
         [46.4825, 30.7233], // Odesa
@@ -300,7 +196,7 @@ function createRangeRings() {
     ];
 
     hubs.forEach(center => {
-        [50000, 100000, 150000].forEach((radius, idx) => {
+        [50000, 100000, 150000].forEach((radius) => {
             const ring = L.circle(center, {
                 radius: radius,
                 color: 'rgba(0, 229, 255, 0.15)',
@@ -310,13 +206,14 @@ function createRangeRings() {
                 interactive: false
             });
             rangeRingsLayers.push(ring);
-            if (showRangeRings) ring.addTo(map);
+            if (showRangeRings && map) ring.addTo(map);
         });
     });
 }
 
 function toggleRangeRings(enable) {
     showRangeRings = enable;
+    if (!map) return;
     rangeRingsLayers.forEach(layer => {
         if (enable) layer.addTo(map);
         else map.removeLayer(layer);
@@ -380,13 +277,13 @@ function flightAnimationLoop(currentTimestamp) {
     lastAnimTimestamp = currentTimestamp;
     const nowEpoch = Date.now() / 1000.0;
 
-    if (dtSeconds > 0) {
+    if (dtSeconds > 0 && map) {
         for (let [tid, obj] of markersMap.entries()) {
             if (!obj.targetData || !obj.marker) continue;
 
             const target = obj.targetData;
 
-            // CIRCLING MODE: Target has reached destination and orbits for ~6s
+            // CIRCLING MODE
             if (target.is_circling) {
                 const startTime = target.circling_start || nowEpoch;
                 const timeCircling = nowEpoch - startTime;
@@ -451,6 +348,7 @@ function flightAnimationLoop(currentTimestamp) {
 
 // 4. Render Targets on Map
 function renderTargetsOnMap(targets) {
+    if (!map) return;
     const currentIds = new Set(targets.map(t => t.target_id));
 
     for (let [tid, obj] of markersMap.entries()) {
@@ -594,14 +492,23 @@ function renderTargetsOnMap(targets) {
 function updateUI(targets) {
     activeTargets = targets;
 
-    document.getElementById('threats-count').innerText = targets.length;
-    document.getElementById('shahed-count').innerText = targets.filter(t => t.target_type === 'SHAHED').length;
-    document.getElementById('rs-count').innerText = targets.filter(t => t.target_type === 'JET_UAV').length;
-    document.getElementById('missile-count').innerText = targets.filter(t => t.target_type === 'MISSILE').length;
-    document.getElementById('ballistic-count').innerText = targets.filter(t => t.target_type === 'BALLISTIC').length;
-    document.getElementById('kab-count').innerText = targets.filter(t => t.target_type === 'KAB').length;
+    const totalEl = document.getElementById('threats-count');
+    const shahedEl = document.getElementById('shahed-count');
+    const rsEl = document.getElementById('rs-count');
+    const missileEl = document.getElementById('missile-count');
+    const ballisticEl = document.getElementById('ballistic-count');
+    const kabEl = document.getElementById('kab-count');
+
+    if (totalEl) totalEl.innerText = targets.length;
+    if (shahedEl) shahedEl.innerText = targets.filter(t => t.target_type === 'SHAHED').length;
+    if (rsEl) rsEl.innerText = targets.filter(t => t.target_type === 'JET_UAV').length;
+    if (missileEl) missileEl.innerText = targets.filter(t => t.target_type === 'MISSILE').length;
+    if (ballisticEl) ballisticEl.innerText = targets.filter(t => t.target_type === 'BALLISTIC').length;
+    if (kabEl) kabEl.innerText = targets.filter(t => t.target_type === 'KAB').length;
 
     const listContainer = document.getElementById('targets-list');
+    if (!listContainer) return;
+
     const filtered = currentFilter === "ALL" ? targets : targets.filter(t => t.target_type === currentFilter);
 
     if (filtered.length === 0) {
@@ -662,7 +569,7 @@ function updateUI(targets) {
 function selectTarget(targetId) {
     selectedTargetId = targetId;
     const tgt = activeTargets.find(t => t.target_id === targetId);
-    if (!tgt) return;
+    if (!tgt || !map) return;
 
     renderTargetDetail(tgt);
     map.flyTo([tgt.current_lat, tgt.current_lon], 8.5, { duration: 0.8 });
@@ -671,38 +578,57 @@ function selectTarget(targetId) {
 
 function renderTargetDetail(tgt) {
     const panel = document.getElementById('target-detail-panel');
+    if (!panel) return;
     panel.style.display = 'block';
 
-    document.getElementById('det-id').innerText = tgt.target_id;
-    document.getElementById('det-badge').innerText = tgt.target_type;
-    document.getElementById('det-badge').className = `tgt-badge ${tgt.target_type}`;
-    
-    document.getElementById('det-type').innerText = `${tgt.target_subtype || tgt.target_type}`;
-    document.getElementById('det-status').innerText = tgt.is_circling ? "🔄 КРУЖЛЯЄ НАД ЦІЛЛЮ" : "АКТИВНИЙ ПОЛІТ";
-    document.getElementById('det-status').className = tgt.is_circling ? "val text-yellow" : "val text-green";
+    const idEl = document.getElementById('det-id');
+    const badgeEl = document.getElementById('det-badge');
+    const typeEl = document.getElementById('det-type');
+    const statusEl = document.getElementById('det-status');
+    const locEl = document.getElementById('det-loc');
+    const destEl = document.getElementById('det-dest');
+    const headingEl = document.getElementById('det-heading');
+    const speedEl = document.getElementById('det-speed');
+    const distEl = document.getElementById('det-distance');
+    const etaEl = document.getElementById('det-eta');
 
-    document.getElementById('det-loc').innerText = `${tgt.current_location_name} [${tgt.current_lat.toFixed(2)}, ${tgt.current_lon.toFixed(2)}]`;
-    document.getElementById('det-dest').innerText = tgt.destination_name || "Не вказано";
-    
-    const headingText = `${tgt.heading} (${Math.round(tgt.heading_deg)}°)`;
-    document.getElementById('det-heading').innerText = headingText;
-    document.getElementById('det-speed').innerText = `${Math.round(tgt.speed_kmh)} км/год`;
-    document.getElementById('det-distance').innerText = tgt.distance_to_dest_km ? `${tgt.distance_to_dest_km} км` : "N/A";
-    document.getElementById('det-eta').innerText = tgt.is_circling ? "ДОСЯГНУТО" : (tgt.eta_minutes ? `~${tgt.eta_minutes} хв` : "N/A");
+    if (idEl) idEl.innerText = tgt.target_id;
+    if (badgeEl) {
+        badgeEl.innerText = tgt.target_type;
+        badgeEl.className = `tgt-badge ${tgt.target_type}`;
+    }
+    if (typeEl) typeEl.innerText = `${tgt.target_subtype || tgt.target_type}`;
+    if (statusEl) {
+        statusEl.innerText = tgt.is_circling ? "🔄 КРУЖЛЯЄ НАД ЦІЛЛЮ" : "АКТИВНИЙ ПОЛІТ";
+        statusEl.className = tgt.is_circling ? "val text-yellow" : "val text-green";
+    }
+    if (locEl) locEl.innerText = `${tgt.current_location_name} [${tgt.current_lat.toFixed(2)}, ${tgt.current_lon.toFixed(2)}]`;
+    if (destEl) destEl.innerText = tgt.destination_name || "Не вказано";
+    if (headingEl) headingEl.innerText = `${tgt.heading} (${Math.round(tgt.heading_deg)}°)`;
+    if (speedEl) speedEl.innerText = `${Math.round(tgt.speed_kmh)} км/год`;
+    if (distEl) distEl.innerText = tgt.distance_to_dest_km ? `${tgt.distance_to_dest_km} км` : "N/A";
+    if (etaEl) etaEl.innerText = tgt.is_circling ? "ДОСЯГНУТО" : (tgt.eta_minutes ? `~${tgt.eta_minutes} хв` : "N/A");
 
     const sourcesContainer = document.getElementById('det-sources-list');
-    sourcesContainer.innerHTML = tgt.sources.map(s => `<span class="src-tag">${s}</span>`).join('');
+    if (sourcesContainer) {
+        sourcesContainer.innerHTML = tgt.sources.map(s => `<span class="src-tag">${s}</span>`).join('');
+    }
 
     const historyContainer = document.getElementById('det-history-list');
-    historyContainer.innerHTML = tgt.raw_reports.map(r => `<div>• ${r}</div>`).join('');
+    if (historyContainer) {
+        historyContainer.innerHTML = tgt.raw_reports.map(r => `<div>• ${r}</div>`).join('');
+    }
 }
 
 // 7. Append Log to Terminal
 function appendTerminalLog(logData) {
     logCount++;
-    document.getElementById('log-counter').innerText = `${logCount} msgs`;
+    const counterEl = document.getElementById('log-counter');
+    if (counterEl) counterEl.innerText = `${logCount} msgs`;
 
     const terminal = document.getElementById('terminal-logs');
+    if (!terminal) return;
+
     const entry = document.createElement('div');
     entry.className = `log-entry ${logData.parsed ? 'parsed' : ''}`;
     entry.innerHTML = `
@@ -719,167 +645,128 @@ function appendTerminalLog(logData) {
     }
 }
 
-// 8. Channels & Folder Manager Logic
-async function fetchAndRenderChannels() {
+// LocalStorage User Preferences Manager
+function saveUserPreferences() {
     try {
-        const resp = await fetch('/api/channels');
-        const data = await resp.json();
-        channelsList = data.channels || [];
-        
-        const badge1 = document.getElementById('monitored-channels-badge');
-        const badge2 = document.getElementById('table-channels-count');
-        const folderInput = document.getElementById('input-folder-url');
-
-        if (badge1) badge1.innerText = channelsList.length;
-        if (badge2) badge2.innerText = channelsList.length;
-        if (folderInput && data.folder_url) {
-            folderInput.value = data.folder_url;
-        }
-
-        const tbody = document.getElementById('channels-table-body');
-        if (tbody) {
-            if (channelsList.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#6b7a8d; padding:20px;">Немає каналів у базі. Синхронізуйте папку вище.</td></tr>';
-                return;
-            }
-
-            tbody.innerHTML = channelsList.map(ch => `
-                <tr>
-                    <td>
-                        <input type="checkbox" ${ch.is_active ? 'checked' : ''} onchange="toggleChannel(${ch.id}, this.checked)">
-                    </td>
-                    <td style="font-weight:700; color: #f0f6fc;">${ch.title}</td>
-                    <td style="color: #00e5ff;">${ch.username ? '@' + ch.username : (ch.tg_channel_id || '-')}</td>
-                    <td>${ch.total_messages_parsed || 0}</td>
-                    <td style="color: #ff9100; font-weight:700;">${ch.threats_detected || 0}</td>
-                    <td>
-                        <button class="hud-btn danger" style="padding: 2px 6px; font-size: 10px;" onclick="deleteChannel(${ch.id})">✕ ВИДАЛИТИ</button>
-                    </td>
-                </tr>
-            `).join('');
-        }
+        const prefs = {
+            isAudioEnabled: isAudioEnabled,
+            audioVolume: audioVolume,
+            currentBaseLayer: currentBaseLayer,
+            showHazardCones: showHazardCones,
+            showRangeRings: showRangeRings,
+            showTrails: showTrails,
+            showVectors: showVectors,
+            speedMultiplier: speedMultiplier,
+            soundMissileEnabled: soundMissileEnabled,
+            soundUavEnabled: soundUavEnabled,
+            soundKillEnabled: soundKillEnabled,
+            sweepEnabled: document.getElementById('set-sweep-toggle')?.checked ?? true,
+            circlingTime: document.getElementById('set-circling-time')?.value ?? "6",
+            targetTtl: document.getElementById('set-target-ttl')?.value ?? "900"
+        };
+        localStorage.setItem(USER_PREFS_KEY, JSON.stringify(prefs));
     } catch (e) {
-        console.error("Error fetching channels:", e);
+        console.warn("Error saving to localStorage:", e);
     }
 }
 
-window.toggleChannel = async function(channelId, isActive) {
+function loadUserPreferences() {
     try {
-        await fetch('/api/channels/toggle', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ channel_id: channelId, is_active: isActive })
-        });
-        fetchAndRenderChannels();
-    } catch (e) {
-        console.error("Toggle error:", e);
-    }
-};
+        const raw = localStorage.getItem(USER_PREFS_KEY);
+        if (!raw) return;
+        const prefs = JSON.parse(raw);
 
-window.deleteChannel = async function(channelId) {
-    if (!confirm("Видалити цей канал зі списку моніторингу?")) return;
-    try {
-        await fetch(`/api/channels/${channelId}`, { method: 'DELETE' });
-        fetchAndRenderChannels();
-    } catch (e) {
-        console.error("Delete error:", e);
-    }
-};
-
-// 9. Telegram Auth Status
-async function fetchTelegramStatus() {
-    try {
-        const resp = await fetch('/api/telegram/status');
-        const data = await resp.json();
-        
-        const label = document.getElementById('tg-auth-status-label');
-        const authCard = document.getElementById('auth-state-text');
-
-        if (label && authCard) {
-            if (data.is_authorized && data.user) {
-                label.innerText = `TG: ${data.user.first_name || 'ONLINE'}`;
-                label.parentElement?.classList.add('active');
-                authCard.innerText = `СТАТУС: АВТОРИЗОВАНО (${data.user.first_name} | @${data.user.username || data.user.phone})`;
-                authCard.className = "auth-state text-green";
-            } else {
-                label.innerText = "TG: АВТОРИЗАЦІЯ";
-                label.parentElement?.classList.remove('active');
-                authCard.innerText = "СТАТУС: НЕ АВТОРИЗОВАНО";
-                authCard.className = "auth-state text-orange";
+        if (prefs.isAudioEnabled !== undefined) {
+            isAudioEnabled = prefs.isAudioEnabled;
+            const btnSound = document.getElementById('btn-sound');
+            if (btnSound) {
+                btnSound.className = `hud-btn ${isAudioEnabled ? 'active' : ''}`;
+                btnSound.innerHTML = `<span class="btn-icon">${isAudioEnabled ? '🔊' : '🔇'}</span> AUDIO: ${isAudioEnabled ? 'ON' : 'OFF'}`;
             }
         }
+
+        if (prefs.audioVolume !== undefined) {
+            audioVolume = parseFloat(prefs.audioVolume);
+            const volInput = document.getElementById('set-volume');
+            const volPct = document.getElementById('vol-pct');
+            if (volInput) volInput.value = Math.round(audioVolume * 100);
+            if (volPct) volPct.innerText = `${Math.round(audioVolume * 100)}%`;
+        }
+
+        if (prefs.currentBaseLayer) {
+            switchBaseLayer(prefs.currentBaseLayer);
+            document.querySelectorAll('.map-layer-selector .layer-btn').forEach(b => {
+                b.classList.toggle('active', b.getAttribute('data-layer') === prefs.currentBaseLayer);
+            });
+        }
+
+        if (prefs.showHazardCones !== undefined) {
+            showHazardCones = prefs.showHazardCones;
+            const el = document.getElementById('set-cones-toggle');
+            if (el) el.checked = showHazardCones;
+        }
+
+        if (prefs.showRangeRings !== undefined) {
+            showRangeRings = prefs.showRangeRings;
+            const el = document.getElementById('set-rings-toggle');
+            if (el) el.checked = showRangeRings;
+            toggleRangeRings(showRangeRings);
+        }
+
+        if (prefs.showTrails !== undefined) {
+            showTrails = prefs.showTrails;
+            const el = document.getElementById('set-trails-toggle');
+            if (el) el.checked = showTrails;
+        }
+
+        if (prefs.showVectors !== undefined) {
+            showVectors = prefs.showVectors;
+            const el = document.getElementById('set-vectors-toggle');
+            if (el) el.checked = showVectors;
+        }
+
+        if (prefs.speedMultiplier !== undefined) {
+            speedMultiplier = parseFloat(prefs.speedMultiplier);
+            const el = document.getElementById('set-speed-mult');
+            if (el) el.value = String(prefs.speedMultiplier);
+        }
+
+        if (prefs.soundMissileEnabled !== undefined) {
+            soundMissileEnabled = prefs.soundMissileEnabled;
+            const el = document.getElementById('set-sound-missile');
+            if (el) el.checked = soundMissileEnabled;
+        }
+
+        if (prefs.soundUavEnabled !== undefined) {
+            soundUavEnabled = prefs.soundUavEnabled;
+            const el = document.getElementById('set-sound-uav');
+            if (el) el.checked = soundUavEnabled;
+        }
+
+        if (prefs.soundKillEnabled !== undefined) {
+            soundKillEnabled = prefs.soundKillEnabled;
+            const el = document.getElementById('set-sound-kill');
+            if (el) el.checked = soundKillEnabled;
+        }
+
+        if (prefs.sweepEnabled !== undefined) {
+            const overlay = document.getElementById('radar-sweep-overlay');
+            const el = document.getElementById('set-sweep-toggle');
+            if (el) el.checked = prefs.sweepEnabled;
+            if (overlay) overlay.style.display = prefs.sweepEnabled ? 'block' : 'none';
+        }
+
+        if (prefs.circlingTime) {
+            const el = document.getElementById('set-circling-time');
+            if (el) el.value = prefs.circlingTime;
+        }
+
+        if (prefs.targetTtl) {
+            const el = document.getElementById('set-target-ttl');
+            if (el) el.value = prefs.targetTtl;
+        }
     } catch (e) {
-        console.error("Error fetching TG status:", e);
-    }
-}
-
-// 10. Simulator & Neptun Toggles
-async function toggleSimulator() {
-    try {
-        const nextState = !simulatorActive;
-        const resp = await fetch('/api/simulator/toggle', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ enabled: nextState })
-        });
-        const data = await resp.json();
-        simulatorActive = data.simulator_active;
-        updateSimulatorBtn();
-    } catch (e) {
-        console.error("Simulator toggle error:", e);
-    }
-}
-
-function updateSimulatorBtn() {
-    const btn = document.getElementById('btn-simulator-toggle');
-    const label = document.getElementById('sim-status-label');
-    if (!btn || !label) return;
-    if (simulatorActive) {
-        label.innerText = "SIM: ON";
-        btn.classList.add('active');
-    } else {
-        label.innerText = "SIM: OFF";
-        btn.classList.remove('active');
-    }
-}
-
-async function toggleNeptun() {
-    try {
-        const nextState = !neptunActive;
-        const resp = await fetch('/api/neptun/toggle', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ enabled: nextState })
-        });
-        const data = await resp.json();
-        neptunActive = data.neptun_active;
-        updateNeptunBtn();
-    } catch (e) {
-        console.error("Neptun toggle error:", e);
-    }
-}
-
-function updateNeptunBtn() {
-    const btn = document.getElementById('btn-neptun-toggle');
-    const label = document.getElementById('neptun-status-label');
-    if (!btn || !label) return;
-    if (neptunActive) {
-        label.innerText = "ДОД. ДЖЕРЕЛО: ON";
-        btn.classList.add('active');
-    } else {
-        label.innerText = "ДОД. ДЖЕРЕЛО: OFF";
-        btn.classList.remove('active');
-    }
-}
-
-async function fetchNeptunStatus() {
-    try {
-        const resp = await fetch('/api/neptun/status');
-        const data = await resp.json();
-        neptunActive = data.enabled || false;
-        updateNeptunBtn();
-    } catch (e) {
-        console.error("Fetch Neptun status error:", e);
+        console.warn("Error loading from localStorage:", e);
     }
 }
 
@@ -888,8 +775,6 @@ window.openModal = function(id) {
     const el = document.getElementById(id);
     if (el) {
         el.style.display = 'flex';
-        if (id === 'modal-channels') fetchAndRenderChannels();
-        if (id === 'modal-auth') fetchTelegramStatus();
     }
 };
 
@@ -898,10 +783,7 @@ window.closeModal = function(id) {
     if (el) el.style.display = 'none';
 };
 
-// 12. WebSocket Connection Manager
-let isWsConnected = false;
-let pollingInterval = null;
-
+// WebSocket Connection Manager with Resilient HTTP Fallback
 function connectWebSocket() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws`;
@@ -921,16 +803,13 @@ function connectWebSocket() {
                 statusEl.innerText = "ONLINE";
                 statusEl.className = "stat-value text-green";
             }
-            console.log("WebSocket connected to SkyWatch core.");
         };
 
         ws.onmessage = (event) => {
             try {
                 const payload = JSON.parse(event.data);
                 handleServerMessage(payload);
-            } catch (e) {
-                console.error("Error parsing WS frame:", e);
-            }
+            } catch (e) {}
         };
 
         ws.onclose = () => {
@@ -939,19 +818,18 @@ function connectWebSocket() {
                 statusEl.innerText = "RECONNECTING";
                 statusEl.className = "stat-value text-red";
             }
-            setTimeout(connectWebSocket, 3000);
+            setTimeout(connectWebSocket, 4000);
         };
 
-        ws.onerror = (err) => {
-            console.error("WS error:", err);
+        ws.onerror = () => {
             isWsConnected = false;
             try { ws.close(); } catch (_) {}
         };
     } catch (e) {
-        console.error("WebSocket init failed:", e);
+        isWsConnected = false;
     }
 
-    // Fallback REST Polling every 2.5s to ensure map ALWAYS receives live updates even if WS is blocked
+    // Fallback REST polling every 2.5s for Render / Proxies
     if (!pollingInterval) {
         pollingInterval = setInterval(async () => {
             try {
@@ -974,7 +852,7 @@ function connectWebSocket() {
                         renderTargetsOnMap(tData.targets);
                         updateUI(tData.targets);
                         if (!isWsConnected && statusEl) {
-                            statusEl.innerText = "ONLINE (HTTP)";
+                            statusEl.innerText = "ONLINE";
                             statusEl.className = "stat-value text-green";
                         }
                     }
@@ -985,18 +863,12 @@ function connectWebSocket() {
 }
 
 function handleServerMessage(msg) {
+    if (!msg) return;
     switch (msg.type) {
         case "INITIAL_STATE":
             if (msg.data && msg.data.targets) {
                 renderTargetsOnMap(msg.data.targets);
                 updateUI(msg.data.targets);
-            }
-            if (msg.data && msg.data.channels) {
-                fetchAndRenderChannels();
-            }
-            if (msg.data && msg.data.simulator_active !== undefined) {
-                simulatorActive = msg.data.simulator_active;
-                updateSimulatorBtn();
             }
             break;
 
@@ -1021,20 +893,16 @@ function handleServerMessage(msg) {
             break;
 
         case "RAW_LOG":
-            appendTerminalLog(msg.data);
-            break;
-
-        case "CHANNELS_UPDATE":
-            fetchAndRenderChannels();
+            if (msg.data) appendTerminalLog(msg.data);
             break;
     }
 }
 
-// 13. Setup Event Listeners
+// Setup Event Listeners
 function setupEventListeners() {
     // Audio Toggle
     const btnSound = document.getElementById('btn-sound');
-    btnSound.addEventListener('click', () => {
+    btnSound?.addEventListener('click', () => {
         isAudioEnabled = !isAudioEnabled;
         btnSound.className = `hud-btn ${isAudioEnabled ? 'active' : ''}`;
         btnSound.innerHTML = `<span class="btn-icon">${isAudioEnabled ? '🔊' : '🔇'}</span> AUDIO: ${isAudioEnabled ? 'ON' : 'OFF'}`;
@@ -1043,62 +911,60 @@ function setupEventListeners() {
     });
 
     // Modals
-    document.getElementById('btn-channels-modal')?.addEventListener('click', () => openModal('modal-channels'));
-    document.getElementById('btn-auth-modal')?.addEventListener('click', () => openModal('modal-auth'));
     document.getElementById('btn-settings-modal')?.addEventListener('click', () => openModal('modal-settings'));
-    document.getElementById('btn-simulator-toggle')?.addEventListener('click', toggleSimulator);
-    document.getElementById('btn-neptun-toggle')?.addEventListener('click', toggleNeptun);
 
     // Clear All
-    document.getElementById('btn-clear').addEventListener('click', async () => {
+    document.getElementById('btn-clear')?.addEventListener('click', async () => {
         try {
             await fetch('/api/clear', { method: 'POST' });
             selectedTargetId = null;
             followTargetId = null;
-            document.getElementById('target-detail-panel').style.display = 'none';
-        } catch (e) {
-            console.error("Clear error:", e);
-        }
+            const panel = document.getElementById('target-detail-panel');
+            if (panel) panel.style.display = 'none';
+        } catch (e) {}
     });
 
     // Close Detail
-    document.getElementById('btn-close-detail').addEventListener('click', () => {
+    document.getElementById('btn-close-detail')?.addEventListener('click', () => {
         selectedTargetId = null;
         followTargetId = null;
-        document.getElementById('target-detail-panel').style.display = 'none';
+        const panel = document.getElementById('target-detail-panel');
+        if (panel) panel.style.display = 'none';
     });
 
     // Follow Target
-    document.getElementById('btn-follow-target').addEventListener('click', () => {
+    document.getElementById('btn-follow-target')?.addEventListener('click', () => {
+        const btn = document.getElementById('btn-follow-target');
         if (followTargetId === selectedTargetId) {
             followTargetId = null;
-            document.getElementById('btn-follow-target').classList.remove('active');
-            document.getElementById('btn-follow-target').innerText = "🎯 СТЕЖИТИ";
+            btn?.classList.remove('active');
+            if (btn) btn.innerText = "🎯 СТЕЖИТИ";
         } else {
             followTargetId = selectedTargetId;
-            document.getElementById('btn-follow-target').classList.add('active');
-            document.getElementById('btn-follow-target').innerText = "📍 СТЕЖИТЬСЯ";
+            btn?.classList.add('active');
+            if (btn) btn.innerText = "📍 СТЕЖИТЬСЯ";
         }
     });
 
     // Manual Neutralize
-    document.getElementById('btn-kill-target').addEventListener('click', async () => {
+    document.getElementById('btn-kill-target')?.addEventListener('click', async () => {
         if (!selectedTargetId) return;
         try {
             await fetch(`/api/targets/${selectedTargetId}/neutralize`, { method: 'POST' });
             selectedTargetId = null;
             followTargetId = null;
-            document.getElementById('target-detail-panel').style.display = 'none';
-        } catch (e) {
-            console.error("Neutralize error:", e);
-        }
+            const panel = document.getElementById('target-detail-panel');
+            if (panel) panel.style.display = 'none';
+        } catch (e) {}
     });
 
     // Clear Terminal
-    document.getElementById('btn-clear-terminal').addEventListener('click', () => {
-        document.getElementById('terminal-logs').innerHTML = '';
+    document.getElementById('btn-clear-terminal')?.addEventListener('click', () => {
+        const terminal = document.getElementById('terminal-logs');
+        if (terminal) terminal.innerHTML = '';
         logCount = 0;
-        document.getElementById('log-counter').innerText = '0 msgs';
+        const cnt = document.getElementById('log-counter');
+        if (cnt) cnt.innerText = '0 msgs';
     });
 
     // Filter Pills
@@ -1106,7 +972,7 @@ function setupEventListeners() {
         pill.addEventListener('click', () => {
             document.querySelectorAll('.filter-pills .pill').forEach(p => p.classList.remove('active'));
             pill.classList.add('active');
-            currentFilter = pill.getAttribute('data-filter');
+            currentFilter = pill.getAttribute('data-filter') || "ALL";
             renderTargetsOnMap(activeTargets);
             updateUI(activeTargets);
         });
@@ -1122,201 +988,37 @@ function setupEventListeners() {
         });
     });
 
-    // Preset Buttons for Quick Testing
-    document.querySelectorAll('.preset-buttons .preset-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const input = document.getElementById('inject-text');
-            if (input) input.value = btn.getAttribute('data-text');
-        });
-    });
-
-    // Injector Form
-    document.getElementById('injector-form')?.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const channel = document.getElementById('inject-channel').value;
-        const text = document.getElementById('inject-text').value;
-        if (!text) return;
-
-        try {
-            await fetch('/api/inject', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ channel: channel, text: text })
-            });
-            document.getElementById('inject-text').value = '';
-        } catch (err) {
-            console.error("Injection error:", err);
-        }
-    });
-
-    // Folder Sync Form
-    document.getElementById('form-folder-sync')?.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const folderUrl = document.getElementById('input-folder-url').value.trim();
-        const statusDiv = document.getElementById('folder-sync-status');
-        const syncBtn = document.getElementById('btn-sync-folder');
-
-        syncBtn.disabled = true;
-        syncBtn.innerText = "⏳ СИНХРОНІЗАЦІЯ...";
-
-        try {
-            const resp = await fetch('/api/folder/sync', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ folder_url: folderUrl })
-            });
-            const res = await resp.json();
-            
-            if (res.status === 'success') {
-                statusDiv.className = "sync-status success";
-                statusDiv.innerText = `✅ Успішно синхронізовано папку "${res.folder_title}"! Імпортовано ${res.imported_channels.length} каналів.`;
-            } else if (res.status === 'saved_offline') {
-                statusDiv.className = "sync-status success";
-                statusDiv.innerText = `💾 Посилання збережено в БД.`;
-            } else {
-                statusDiv.className = "sync-status error";
-                statusDiv.innerText = `❌ Помилка: ${res.message || 'Не вдалося синхронізувати папку'}`;
-            }
-            fetchAndRenderChannels();
-        } catch (err) {
-            statusDiv.className = "sync-status error";
-            statusDiv.innerText = `❌ Мережева помилка: ${err}`;
-        } finally {
-            syncBtn.disabled = false;
-            syncBtn.innerText = "🔄 СИНХРОНІЗУВАТИ ПАПКУ (31 КАНАЛ)";
-        }
-    });
-
-    // Add Channel Form
-    document.getElementById('form-add-channel')?.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const title = document.getElementById('add-channel-title').value.trim();
-        const username = document.getElementById('add-channel-username').value.trim();
-
-        try {
-            await fetch('/api/channels/add', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ title: title, username: username })
-            });
-            document.getElementById('add-channel-title').value = '';
-            document.getElementById('add-channel-username').value = '';
-            fetchAndRenderChannels();
-        } catch (err) {
-            console.error("Add channel error:", err);
-        }
-    });
-
-    // Telegram Request Code Form
-    document.getElementById('form-tg-request-code')?.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const apiId = parseInt(document.getElementById('tg-api-id').value);
-        const apiHash = document.getElementById('tg-api-hash').value.trim();
-        const phone = document.getElementById('tg-phone').value.trim();
-        const statusDiv = document.getElementById('auth-result-msg');
-        const sendBtn = document.getElementById('btn-send-code');
-
-        sendBtn.disabled = true;
-        sendBtn.innerText = "⏳ ВІДПРАВКА КОДУ...";
-
-        try {
-            const resp = await fetch('/api/telegram/request-code', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ api_id: apiId, api_hash: apiHash, phone: phone })
-            });
-            const res = await resp.json();
-
-            if (res.status === 'code_sent') {
-                statusDiv.className = "sync-status success";
-                statusDiv.innerText = `📲 Код надіслано на номер ${phone}. Введіть його нижче:`;
-                document.getElementById('form-tg-submit-code').style.display = 'flex';
-            } else {
-                statusDiv.className = "sync-status error";
-                statusDiv.innerText = `❌ Помилка: ${res.message || 'Не вдалося надіслати код'}`;
-            }
-        } catch (err) {
-            statusDiv.className = "sync-status error";
-            statusDiv.innerText = `❌ Помилка з'єднання: ${err}`;
-        } finally {
-            sendBtn.disabled = false;
-            sendBtn.innerText = "📲 НАДІСЛАТИ КОД ПІДТВЕРДЖЕННЯ";
-        }
-    });
-
-    // Telegram Submit Code Form
-    document.getElementById('form-tg-submit-code')?.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const code = document.getElementById('tg-code').value.trim();
-        const pwd = document.getElementById('tg-password-2fa').value.trim();
-        const statusDiv = document.getElementById('auth-result-msg');
-        const loginBtn = document.getElementById('btn-login-submit');
-
-        loginBtn.disabled = true;
-        loginBtn.innerText = "⏳ АВТОРИЗАЦІЯ...";
-
-        try {
-            const resp = await fetch('/api/telegram/login', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ code: code, password_2fa: pwd || null })
-            });
-            const res = await resp.json();
-
-            if (res.status === 'success') {
-                statusDiv.className = "sync-status success";
-                statusDiv.innerText = `✅ Успішна авторизація! Підключено: ${res.user.first_name} (@${res.user.username || res.user.phone}).`;
-                fetchTelegramStatus();
-                fetchAndRenderChannels();
-                setTimeout(() => closeModal('modal-auth'), 2000);
-            } else if (res.status === '2fa_required') {
-                statusDiv.className = "sync-status error";
-                statusDiv.innerText = "🔒 Потрібен пароль 2FA. Введіть пароль нижче.";
-                document.getElementById('group-2fa').style.display = 'block';
-            } else {
-                statusDiv.className = "sync-status error";
-                statusDiv.innerText = `❌ Помилка: ${res.message || 'Невірний код'}`;
-            }
-        } catch (err) {
-            statusDiv.className = "sync-status error";
-            statusDiv.innerText = `❌ Помилка: ${err}`;
-        } finally {
-            loginBtn.disabled = false;
-            loginBtn.innerText = "🔐 УВІЙТИ ТА ПОЧАТИ МОНІТОРИНГ";
-        }
-    });
-
     // Tactical Settings Handlers
-    document.getElementById('set-sweep-toggle').addEventListener('change', (e) => {
+    document.getElementById('set-sweep-toggle')?.addEventListener('change', (e) => {
         const overlay = document.getElementById('radar-sweep-overlay');
         if (overlay) overlay.style.display = e.target.checked ? 'block' : 'none';
         saveUserPreferences();
     });
 
-    document.getElementById('set-cones-toggle').addEventListener('change', (e) => {
+    document.getElementById('set-cones-toggle')?.addEventListener('change', (e) => {
         showHazardCones = e.target.checked;
         renderTargetsOnMap(activeTargets);
         saveUserPreferences();
     });
 
-    document.getElementById('set-rings-toggle').addEventListener('change', (e) => {
+    document.getElementById('set-rings-toggle')?.addEventListener('change', (e) => {
         toggleRangeRings(e.target.checked);
         saveUserPreferences();
     });
 
-    document.getElementById('set-trails-toggle').addEventListener('change', (e) => {
+    document.getElementById('set-trails-toggle')?.addEventListener('change', (e) => {
         showTrails = e.target.checked;
         renderTargetsOnMap(activeTargets);
         saveUserPreferences();
     });
 
-    document.getElementById('set-vectors-toggle').addEventListener('change', (e) => {
+    document.getElementById('set-vectors-toggle')?.addEventListener('change', (e) => {
         showVectors = e.target.checked;
         renderTargetsOnMap(activeTargets);
         saveUserPreferences();
     });
 
-    document.getElementById('set-speed-mult').addEventListener('change', (e) => {
+    document.getElementById('set-speed-mult')?.addEventListener('change', (e) => {
         speedMultiplier = parseFloat(e.target.value) || 1.0;
         saveUserPreferences();
     });
@@ -1329,44 +1031,53 @@ function setupEventListeners() {
         saveUserPreferences();
     });
 
-    document.getElementById('set-volume').addEventListener('input', (e) => {
+    document.getElementById('set-volume')?.addEventListener('input', (e) => {
         audioVolume = parseFloat(e.target.value) / 100.0;
         const pctEl = document.getElementById('vol-pct');
         if (pctEl) pctEl.innerText = `${Math.round(audioVolume * 100)}%`;
         saveUserPreferences();
     });
 
-    document.getElementById('set-sound-missile').addEventListener('change', (e) => {
+    document.getElementById('set-sound-missile')?.addEventListener('change', (e) => {
         soundMissileEnabled = e.target.checked;
         saveUserPreferences();
     });
 
-    document.getElementById('set-sound-uav').addEventListener('change', (e) => {
+    document.getElementById('set-sound-uav')?.addEventListener('change', (e) => {
         soundUavEnabled = e.target.checked;
         saveUserPreferences();
     });
 
-    document.getElementById('set-sound-kill').addEventListener('change', (e) => {
+    document.getElementById('set-sound-kill')?.addEventListener('change', (e) => {
         soundKillEnabled = e.target.checked;
         saveUserPreferences();
     });
+}
 
-// Update Live Kyiv Time Clock
+// Live Kyiv Clock (Direct execution with fallback)
 setInterval(() => {
-    const now = new Date();
-    const kyivTime = now.toLocaleTimeString('uk-UA', { timeZone: 'Europe/Kyiv' });
-    const clockEl = document.getElementById('kyiv-clock');
-    if (clockEl) clockEl.innerText = `${kyivTime} KYIV`;
+    try {
+        const now = new Date();
+        const kyivTime = now.toLocaleTimeString('uk-UA', { timeZone: 'Europe/Kyiv' });
+        const clockEl = document.getElementById('kyiv-clock');
+        if (clockEl) clockEl.innerText = `${kyivTime} KYIV`;
+    } catch (e) {}
 }, 1000);
 
-// Bootstrap
-document.addEventListener('DOMContentLoaded', () => {
+// Safe Bootstrap Sequence
+function bootstrapApp() {
     try {
         initMap();
         loadUserPreferences();
         setupEventListeners();
         connectWebSocket();
     } catch (e) {
-        console.error("Initialization error:", e);
+        console.error("Fatal bootstrap error:", e);
     }
-});
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bootstrapApp);
+} else {
+    bootstrapApp();
+}

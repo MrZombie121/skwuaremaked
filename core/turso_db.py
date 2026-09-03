@@ -78,8 +78,8 @@ class TursoDatabaseClient:
         return None
 
     async def init_schema(self):
-        """Creates maintenance_config table on Turso cloud DB if not exists."""
-        sql = """
+        """Creates maintenance_config and system_settings tables on Turso cloud DB if not exists."""
+        sql_maint = """
         CREATE TABLE IF NOT EXISTS maintenance_config (
             id TEXT PRIMARY KEY,
             is_enabled INTEGER DEFAULT 0,
@@ -88,7 +88,16 @@ class TursoDatabaseClient:
             updated_at INTEGER
         );
         """
-        await self.execute_query(sql)
+        await self.execute_query(sql_maint)
+
+        sql_settings = """
+        CREATE TABLE IF NOT EXISTS system_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT,
+            updated_at INTEGER
+        );
+        """
+        await self.execute_query(sql_settings)
         
         # Insert default row if not exists
         check_sql = "SELECT id FROM maintenance_config WHERE id = 'main';"
@@ -97,6 +106,26 @@ class TursoDatabaseClient:
             insert_sql = "INSERT INTO maintenance_config (id, is_enabled, reason, end_timestamp, updated_at) VALUES ('main', 0, 'Тривають планові технічні роботи.', 0, ?);"
             await self.execute_query(insert_sql, [int(time.time())])
             logger.info("Initialized Turso maintenance table schema.")
+
+    async def get_setting(self, key: str, default: Optional[str] = None) -> Optional[str]:
+        """Gets a persistent setting from Turso cloud database."""
+        sql = "SELECT value FROM system_settings WHERE key = ?;"
+        res = await self.execute_query(sql, [key])
+        if res and res.get("rows"):
+            return str(res["rows"][0][0].get("value", ""))
+        return default
+
+    async def set_setting(self, key: str, value: str):
+        """Saves a persistent setting to Turso cloud database."""
+        now = int(time.time())
+        sql = """
+        INSERT INTO system_settings (key, value, updated_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(key) DO UPDATE SET
+            value = excluded.value,
+            updated_at = excluded.updated_at;
+        """
+        await self.execute_query(sql, [key, value, now])
 
     async def get_maintenance_state(self) -> Dict[str, Any]:
         """Fetches live maintenance state from Turso (with JSON local fallback)."""

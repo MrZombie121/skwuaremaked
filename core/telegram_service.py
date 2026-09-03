@@ -17,6 +17,7 @@ from telethon.tl.functions.chatlists import CheckChatlistInviteRequest, JoinChat
 
 import config
 from core.db import db
+from core.turso_db import turso_db
 from core.models import RawTelegramMessage
 
 logger = logging.getLogger("SkyWatch.TelegramService")
@@ -37,24 +38,26 @@ class TelegramService:
         self._listening_chats: List[Any] = []
         self._event_handler = None
 
-    def _get_credentials(self) -> Tuple[int, str]:
-        api_id = db.get_setting("tg_api_id") or config.TELEGRAM_API_ID
-        api_hash = db.get_setting("tg_api_hash") or config.TELEGRAM_API_HASH
+    async def _get_credentials_async(self) -> Tuple[int, str, str]:
+        # Priority: 1. Environment Variable -> 2. Turso Cloud DB -> 3. Local JSON DB -> 4. config.py
+        api_id_val = os.getenv("TG_API_ID") or await turso_db.get_setting("tg_api_id") or db.get_setting("tg_api_id") or config.TELEGRAM_API_ID
+        api_hash_val = os.getenv("TG_API_HASH") or await turso_db.get_setting("tg_api_hash") or db.get_setting("tg_api_hash") or config.TELEGRAM_API_HASH
+        session_str = os.getenv("TG_SESSION_STRING") or await turso_db.get_setting("session_string") or db.get_setting("session_string") or config.TELEGRAM_SESSION_STRING or ""
+        
         try:
-            api_id = int(api_id) if api_id else 0
+            api_id = int(api_id_val) if api_id_val else 0
         except (ValueError, TypeError):
             api_id = 0
-        return api_id, str(api_hash or "")
+            
+        return api_id, str(api_hash_val or ""), str(session_str)
 
     async def initialize(self) -> bool:
-        """Initializes Telethon client using StringSession stored in data/settings.json."""
-        api_id, api_hash = self._get_credentials()
+        """Initializes Telethon client using StringSession stored in Turso/Environment/settings.json."""
+        api_id, api_hash, session_str = await self._get_credentials_async()
         
         if not api_id or not api_hash:
             logger.info("Telegram API credentials not configured yet. Awaiting user login.")
             return False
-
-        session_str = db.get_setting("session_string") or config.TELEGRAM_SESSION_STRING or ""
 
         try:
             logger.info(f"Connecting Telethon client with StringSession (API ID: {api_id})...")
@@ -73,10 +76,11 @@ class TelegramService:
                 }
                 logger.info(f"Telegram client authorized as: {me.first_name} (@{me.username or me.phone})")
                 
-                # Save string session if newly created/updated
+                # Save string session to Turso and Local DB
                 new_session_str = self.client.session.save()
                 if new_session_str != session_str:
                     db.set_setting("session_string", new_session_str)
+                    await turso_db.set_setting("session_string", new_session_str)
 
                 # Auto-sync the 31 channels folder and start live listening
                 default_folder = db.get_setting("folder_url") or config.TELEGRAM_FOLDER_URL or "https://t.me/addlist/syGYtBj5T9AxNzIy"
@@ -143,9 +147,11 @@ class TelegramService:
             }
             logger.info(f"Successfully logged in as {me.first_name} (@{me.username})")
 
-            # Save StringSession
+            # Save StringSession locally and to Turso Cloud
             string_session = self.client.session.save()
             db.set_setting("session_string", string_session)
+            await turso_db.set_setting("session_string", string_session)
+            await turso_db.set_setting("tg_phone", str(me.phone or ""))
 
             # Start folder sync and listener
             default_folder = db.get_setting("folder_url") or "https://t.me/addlist/syGYtBj5T9AxNzIy"
