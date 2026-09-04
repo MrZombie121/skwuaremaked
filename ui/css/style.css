@@ -1030,6 +1030,28 @@ body {
     padding: 4px 8px !important;
 }
 
+.test-mode-indicator {
+    background: rgba(0, 229, 255, 0.15);
+    border: 1px solid var(--color-cyan);
+    color: var(--color-cyan);
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 800;
+    font-family: var(--font-tech);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    box-shadow: 0 0 10px rgba(0, 229, 255, 0.3);
+    animation: pulseGlowCyan 2s infinite ease-in-out;
+}
+
+@keyframes pulseGlowCyan {
+    0% { box-shadow: 0 0 5px rgba(0, 229, 255, 0.2); }
+    50% { box-shadow: 0 0 15px rgba(0, 229, 255, 0.5); }
+    100% { box-shadow: 0 0 5px rgba(0, 229, 255, 0.2); }
+}
+
 /* HELPER CLASSES */
 .text-green { color: var(--color-green) !important; }
 .text-cyan { color: var(--color-cyan) !important; }

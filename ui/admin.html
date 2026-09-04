@@ -185,10 +185,13 @@
                 <h1>🛡️ SKYWATCH <span class="badge-tag">ADMIN CONTROL</span></h1>
                 <span class="sub-title">ГОЛОВНА ПАНЕЛЬ КЕРУВАННЯ СЕРВЕРОМ • BUILD: 1421.2026.f8c2e9b-RELEASE (від 04.09.2026)</span>
             </div>
-            <div style="display: flex; gap: 8px;">
+            <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
                 <span class="cloud-badge" id="turso-status-badge">⚡ TURSO: CONNECTED</span>
-                <a href="/" target="_blank" class="hud-btn highlight">
-                    🌐 ВІДКРИТИ РАДАР
+                <a href="/" target="_blank" class="hud-btn" style="border-color: #6b7a8d;" title="Відкрити як звичайний користувач">
+                    🌐 ПУБЛІЧНИЙ РАДАР
+                </a>
+                <a id="btn-test-radar-link" href="/test-radar?key=skywatch-secret-key-2026" target="_blank" class="hud-btn highlight" style="background: rgba(0, 229, 255, 0.15); border-color: #00e5ff; color: #00e5ff;" title="Відкрити радар із обходом екрану технічних робіт">
+                    🧪 ТЕСТОВИЙ РАДАР (ОБХІД ТЕХ. РОБІТ)
                 </a>
             </div>
         </div>
@@ -345,6 +348,12 @@
     <script>
         const urlParams = new URLSearchParams(window.location.search);
         const secretKey = urlParams.get('key') || 'skywatch-secret-key-2026';
+
+        // Update Test Radar link dynamically with current admin secret key
+        const testLink = document.getElementById('btn-test-radar-link');
+        if (testLink) {
+            testLink.href = `/test-radar?key=${encodeURIComponent(secretKey)}`;
+        }
 
         let isMaintActive = false;
         let isSimActive = false;

@@ -837,12 +837,15 @@ function connectWebSocket() {
     if (!pollingInterval) {
         pollingInterval = setInterval(async () => {
             try {
+                const urlParams = new URLSearchParams(window.location.search);
+                const hasBypassKey = urlParams.has('key') || urlParams.has('bypass') || window.location.pathname.includes('test-radar');
+
                 const [tResp, mResp] = await Promise.all([
                     fetch('/api/targets'),
                     fetch('/api/maintenance/status')
                 ]);
                 
-                if (mResp.ok) {
+                if (mResp.ok && !hasBypassKey) {
                     const mData = await mResp.json();
                     if (mData.maintenance_mode) {
                         window.location.reload();
@@ -1090,6 +1093,13 @@ setInterval(() => {
 // Safe Bootstrap Sequence
 function bootstrapApp() {
     try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const hasBypassKey = urlParams.has('key') || urlParams.has('bypass') || window.location.pathname.includes('test-radar');
+        if (hasBypassKey) {
+            const badge = document.getElementById('admin-test-badge');
+            if (badge) badge.style.display = 'inline-flex';
+        }
+
         initMap();
         loadUserPreferences();
         setupEventListeners();

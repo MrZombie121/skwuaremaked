@@ -281,11 +281,24 @@ async def shutdown_event():
         await telegram_service.stop()
 
 @app.get("/")
-async def root():
-    # Check persistent maintenance mode from Turso / Database
-    state = await turso_db.get_maintenance_state()
-    if state.get("maintenance_mode", False):
-        return FileResponse(os.path.join(UI_DIR, "maintenance.html"))
+async def root(key: Optional[str] = None, bypass: Optional[str] = None):
+    expected_key = db.get_setting("admin_secret_key") or config.ADMIN_SECRET_KEY
+    # Check if admin bypass is requested with valid secret key
+    is_bypass = (key == expected_key) or (bypass == expected_key)
+    
+    if not is_bypass:
+        state = await turso_db.get_maintenance_state()
+        if state.get("maintenance_mode", False):
+            return FileResponse(os.path.join(UI_DIR, "maintenance.html"))
+            
+    return FileResponse(os.path.join(UI_DIR, "index.html"))
+
+@app.get("/test-radar")
+async def test_radar_page(key: Optional[str] = None, bypass: Optional[str] = None):
+    expected_key = db.get_setting("admin_secret_key") or config.ADMIN_SECRET_KEY
+    is_bypass = (key == expected_key) or (bypass == expected_key)
+    if not is_bypass:
+        raise HTTPException(status_code=403, detail="Доступ заборонено: потрібен секретний ключ адміністратора")
     return FileResponse(os.path.join(UI_DIR, "index.html"))
 
 @app.get("/system-control-panel")
