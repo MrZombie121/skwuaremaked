@@ -75,6 +75,7 @@ class ParsedThreatEvent(BaseModel):
     dest_lon: Optional[float] = None
     is_clear_signal: bool = False
     altitude_info: Optional[str] = None
+    speed_kmh: Optional[float] = None
     timestamp: float = Field(default_factory=time.time)
     confidence: float = 0.85
 

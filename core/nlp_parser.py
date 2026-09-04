@@ -1,7 +1,7 @@
 """
-High-Sensitivity & Smart Multi-Threat NLP Extractor for Ukrainian Air Defense Telegram Channels
-Extracts multiple simultaneous threats from composite multi-line military bulletins,
-classifies target subtypes, speeds, directions, and detects target neutralization / all-clear signals.
+High-Sensitivity & Smart Tactical Air Defense Threat NLP Parser for Ukrainian Telegram Channels
+Strictly filters out non-tactical news, energy/power outage reports, chatter, prices, and past summaries.
+Extracts multiple simultaneous threats from composite bulletins with explicit flight vector verification.
 """
 import math
 import re
@@ -17,25 +17,37 @@ from core.geo_engine import (
 
 class TelegramThreatParser:
     def __init__(self):
-        # 1. Exclusion Patterns (Fundraising, Donations, Bank cards, Commercial Ads)
+        # 1. Exclusion Patterns: Fundraising, Donations, Commercials
         self.donation_pattern = re.compile(
             r'(\b(збір|збираємо|донат\w*|монобанк\w*|send\.monobank|приватбанк\w*|картка|гривень|\d+\s*грн|спорядження|берці|бронежилет\w*|амуніці\w*|пошир\w*\s+(?:цей\s+)?збір|підпишіться|підписуйтесь|реклам\w*)\b|\b\d{4}[\s\-]?\d{4}[\s\-]?\d{4}[\s\-]?\d{4}\b|send\.monobank\.ua)',
             re.IGNORECASE
         )
 
-        # 2. Exclusion Patterns (News articles, analytical summaries, press)
-        self.news_analytics_pattern = re.compile(
-            r'\b(the\s+telegraph|the\s+times|reuters|bloomberg|статт\w*|виток\w*\s+документів|супутников\w*\s+знімк\w*|завод\w*\s+«?алабуг\w*|алабуг\w*|виробля\w*\s+тисяч|площ\w*\s+складів|підсумки\s+доби|зведення\s+за\s+добу|за\s+минулу\s+добу|за\s+минулу\s+ніч|у\s+нещодавніх\s+обстрілах|сьогодні\s+вранці\s+було|повідомляє\s+видання|інтерв\'ю|аналітик\w*|експерт\w*)\b',
+        # 2. Exclusion Patterns: Power outages, DTEK, Utilities, Energy, Heat, Water
+        self.energy_utilities_pattern = re.compile(
+            r'\b(дтек|dtek|укренерго|відключен\w*\s+світл\w*|відключення\s+електроенергії|електроенергі\w*|електропостачан\w*|графік\w*\s+відключень|аварійні\s+відключення|де\s+світло|де\s+свет|без\s+світла|без\s+света|блекаут|знеструмлен\w*|комуналк\w*|опаленн\w*|водопостачан\w*|енергетик\w*|енергооб\'?єкт\w*|економити\s+електроенергію)\b',
             re.IGNORECASE
         )
 
-        # 3. Exclusion Patterns (Greetings, casual chitchat without alert content)
-        self.casual_chitchat_pattern = re.compile(
+        # 3. Exclusion Patterns: Chatter, discussions, prices, real estate, humor, weather
+        self.chatter_discussion_pattern = re.compile(
+            r'\b(квартир\w*|оренд\w*|цін\w*|долар\w*|євро|валют\w*|грош\w*|погод\w*|температур\w*|градус\w*|анекдот\w*|мем\w*|рекорд\w*|гінес\w*|кастрюл\w*|піздец\w*|аху\w*|тижнет\w*|без\s+комментариев|без\s+коментарів)\b',
+            re.IGNORECASE
+        )
+
+        # 4. Exclusion Patterns: Historical summaries & aftermath of past attacks
+        self.past_aftermath_pattern = re.compile(
+            r'\b(після\s+нічної\s+атаки|після\s+обстрілу|наслідки\s+атаки|були\s+пошкоджені|пошкоджен\w*\s+об\'?єкт\w*|відновлювальн\w*\s+робот\w*|ліквідаці\w*\s+наслідків|за\s+минулу\s+добу|зведення\s+за\s+добу|підсумки\s+доби|сьогодні\s+вранці\s+було|the\s+telegraph|reuters|bloomberg|інтерв\'ю|аналітик\w*)\b',
+            re.IGNORECASE
+        )
+
+        # 5. Exclusion Patterns: Greetings & casual check-ins
+        self.casual_greetings_pattern = re.compile(
             r'^(доброго\s+ранку|добрий\s+ранок|на\s+добраніч|спокійної\s+ночі|гарного\s+дня|тихої\s+ночі|як\s+ви\??|як\s+справи\??)[!.,\s]*$',
             re.IGNORECASE
         )
 
-        # Target Type RegEx Patterns with Subtype Resolution
+        # Explicit Airborne Threat Keywords
         self.type_patterns = [
             (TargetType.BALLISTIC, re.compile(
                 r'\b(іскандер-м|искандер-м|балістик\w*|балистик\w*|кинджал\w*|кинжал\w*|циркон\w*|с-300|с-400|х-22|х-32)\b',
@@ -46,7 +58,7 @@ class TelegramThreatParser:
                 re.IGNORECASE
             )),
             (TargetType.JET_UAV, re.compile(
-                r'\b(реактивн\w*|швидкісн\w*|jet\s*uav|реактив\w*)\b',
+                r'\b(реактивн\w*|швидкісн\w*\s+бпла|швидкісн\w*\s+дрон|jet\s*uav|реактив\w*)\b',
                 re.IGNORECASE
             )),
             (TargetType.MISSILE, re.compile(
@@ -66,10 +78,16 @@ class TelegramThreatParser:
                 re.IGNORECASE
             )),
             (TargetType.SHAHED, re.compile(
-                r'\b(шахед\w*|шахід\w*|shahed\w*|геран\w*|мопед\w*|бпла|дрон\w*|бплa|безпілотник\w*)\b',
+                r'\b(шахед\w*|шахід\w*|shahed\w*|геран\w*|мопед\w*|бпла|дрон\w*|бплa|безпілотник\w*|повітрян\w*\s+ціл\w*|швидкісн\w*\s+ціл\w*)\b',
                 re.IGNORECASE
             )),
         ]
+
+        # Explicit Flight Action / Vector Verifiers
+        self.flight_action_pattern = re.compile(
+            r'\b(курсом\s+на|вектор\s+на|в\s+напрямку|у\s+напрямку|напрямок\s+|летить\s+на|летять\s+на|рух\s+у\s+напрямку|руха[єе]ться\s+на|на\s+підльоті|підлітає|заходить\s+на|пролітає|транзитом\s+повз|вздовж\s+русла|руслом\s+на|з\s+моря\s+до|з\s+акваторії|пуск\w*|скид\w*|тривога\s+по|загроза\s+по|укриття|чисто|відбій|збито|мінус|локаційно\s+втрачено)\b',
+            re.IGNORECASE
+        )
 
         # Direction patterns (Ukrainian & Russian)
         self.direction_patterns = [
@@ -83,7 +101,7 @@ class TelegramThreatParser:
             (HeadingDirection.E,  re.compile(r'\b(східн\w*|восточн\w*|на\s+схід|на\s+восток|сх|курсом\s+на\s+сх)\b', re.I)),
         ]
 
-        # Quantity detection regex (e.g. "2х", "3 шахеда", "пара", "група з 4")
+        # Quantity detection regex
         self.qty_patterns = [
             re.compile(r'(\d+)\s*(?:х|x|шт|од)?\s*(?:шахед|бпла|ракет|ціл|дрон|реактив|каб)', re.I),
             re.compile(r'(?:група|скупчення)\s*(?:з\s*)?(\d+)', re.I),
@@ -105,24 +123,29 @@ class TelegramThreatParser:
         ]
 
     def is_non_tactical_message(self, text: str) -> bool:
-        """Filters out non-tactical messages (donations, analytics, commercials, greetings)."""
+        """Strictly identifies and filters out non-tactical messages."""
+        if not text or len(text.strip()) < 3:
+            return True
         if self.donation_pattern.search(text):
             return True
-        if self.news_analytics_pattern.search(text):
+        if self.energy_utilities_pattern.search(text):
             return True
-        if len(text) > 400 and not re.search(r'\b(увага|тривог\w*|небезпек\w*|курсом\s+на|вектор\w*|пуск\w*|шахед\w*|ракет\w*|летить|летять|вибух\w*)\b', text, re.I):
+        if self.chatter_discussion_pattern.search(text):
             return True
-        if self.casual_chitchat_pattern.search(text.strip()):
+        if self.past_aftermath_pattern.search(text):
+            return True
+        if self.casual_greetings_pattern.search(text.strip()):
             return True
         return False
 
-    def extract_target_type(self, text: str) -> Tuple[TargetType, Optional[str]]:
+    def extract_target_type(self, text: str) -> Optional[Tuple[TargetType, str]]:
+        """Extracts explicit threat type or returns None if no threat keywords present."""
         for target_type, pattern in self.type_patterns:
             m = pattern.search(text)
             if m:
                 subtype = m.group(0).strip()
                 return target_type, subtype
-        return TargetType.SHAHED, "Shahed"
+        return None
 
     def extract_quantity(self, text: str) -> int:
         for pattern in self.qty_patterns:
@@ -171,19 +194,32 @@ class TelegramThreatParser:
     ) -> Optional[ParsedThreatEvent]:
         """Parses a single threat sentence or line into a ParsedThreatEvent."""
         text = clause_text.strip()
-        if not text or len(text) < 2:
+        if not text or len(text) < 3:
+            return None
+
+        # Filter out non-tactical messages (DTEK, utilities, chatter, past aftermath)
+        if self.is_non_tactical_message(text):
             return None
 
         # Check for target neutralization / clear signal
         is_clear = bool(self.clear_patterns.search(text))
 
+        # Check for explicit threat keywords
+        type_res = self.extract_target_type(text)
+        has_flight_action = bool(self.flight_action_pattern.search(text))
+
+        # If there is NO threat keyword AND NO flight action/alert semantic, REJECT!
+        if not type_res and not has_flight_action and not is_clear:
+            return None
+
+        target_type, subtype = type_res if type_res else (TargetType.SHAHED, "Shahed")
+
         # 1. Geo Extraction (Current vs Destination)
         curr_geo, dest_geo = extract_current_and_destination(text)
         
-        # Infer regional fallback from channel title if missing
         if not curr_geo and not dest_geo:
             inferred = infer_location_from_channel(source_channel)
-            if inferred and len(text) < 180:
+            if inferred and (type_res or has_flight_action) and len(text) < 140:
                 curr_geo = inferred
             elif is_clear and reply_to_msg_id:
                 return ParsedThreatEvent(
@@ -191,7 +227,7 @@ class TelegramThreatParser:
                     message_id=message_id,
                     reply_to_msg_id=reply_to_msg_id,
                     raw_text=text,
-                    target_type=TargetType.SHAHED,
+                    target_type=target_type,
                     location_name="Unknown",
                     lat=0.0,
                     lon=0.0,
@@ -204,12 +240,10 @@ class TelegramThreatParser:
         loc_tuple = dest_geo or curr_geo
         loc_name, lat, lon, region = loc_tuple
 
-        # 2. Target Type & Subtype & Quantity
-        target_type, subtype = self.extract_target_type(text)
         qty = self.extract_quantity(text)
         altitude = self.extract_altitude(text)
 
-        # 3. Flight Heading Vector & Destination Settlement Coordinates
+        # 2. Flight Heading Vector & Destination Settlement Coordinates
         heading = HeadingDirection.UNKNOWN
         heading_deg = 0.0
         destination_name = None
@@ -280,7 +314,7 @@ class TelegramThreatParser:
         Parses composite military bulletins that contain multiple simultaneous threat reports across lines.
         Returns: List of ParsedThreatEvent objects.
         """
-        if not text or len(text.strip()) < 2:
+        if not text or len(text.strip()) < 3:
             return []
 
         if self.is_non_tactical_message(text):

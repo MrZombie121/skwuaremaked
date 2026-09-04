@@ -190,6 +190,11 @@ async def on_neptun_event_received(event: ParsedThreatEvent):
 
 async def on_message_received(raw_msg: RawTelegramMessage):
     """Callback for all live messages received from Telegram or Simulator."""
+    # Skip any messages published more than 10 minutes (600 seconds) ago
+    if (time.time() - raw_msg.timestamp) > 600:
+        logger.debug(f"Skipping message older than 10 minutes ({int(time.time() - raw_msg.timestamp)}s)")
+        return
+
     # 1. Multi-threat NLP parsing (composite messages support)
     events: List[ParsedThreatEvent] = parser.parse_message_multi(
         text=raw_msg.text,

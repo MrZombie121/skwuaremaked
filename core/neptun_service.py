@@ -9,6 +9,7 @@ import logging
 import time
 import aiohttp
 from typing import Callable, Optional, Dict, Any, List, Set
+import config
 from core.models import ParsedThreatEvent, TargetType, HeadingDirection
 from core.geo_engine import (
     extract_current_and_destination,
@@ -129,9 +130,20 @@ class NeptunApiService:
             raw_type = str(threat.get("type") or threat.get("threatType") or threat.get("category") or "uav")
             target_type = self._map_neptun_type(raw_type, title)
 
-            loc_name = str(threat.get("locality") or threat.get("district") or threat.get("region") or threat.get("name") or "Україна")
+            # Extract specific locality (take settlement before comma, e.g. "Миколаїв" from "Миколаїв, Миколаївська область")
+            raw_locality = threat.get("locality")
+            raw_region = threat.get("region")
             
-            # Heading extraction
+            if raw_locality and isinstance(raw_locality, str) and raw_locality.strip():
+                loc_name = raw_locality.split(",")[0].strip()
+            elif threat.get("district"):
+                loc_name = str(threat["district"]).split(",")[0].strip()
+            elif raw_region:
+                loc_name = str(raw_region).strip()
+            else:
+                loc_name = "Україна"
+            
+            # Ground truth Heading from Neptun
             heading_deg = 0.0
             for h_k in ("heading", "bearing", "bearingDeg", "directionDeg", "azimuth"):
                 if h_k in threat and threat[h_k] is not None:
@@ -148,6 +160,20 @@ class NeptunApiService:
                     except (ValueError, TypeError):
                         pass
 
+            # Ground truth Speed from Neptun
+            speed_kmh = config.THREAT_SPEED_PROFILES.get(target_type.value, 185.0)
+            vel = threat.get("velocity") or {}
+            if isinstance(vel, dict) and vel.get("speedKmh"):
+                try:
+                    speed_kmh = float(vel["speedKmh"])
+                except (ValueError, TypeError):
+                    pass
+            elif threat.get("speed"):
+                try:
+                    speed_kmh = float(threat["speed"])
+                except (ValueError, TypeError):
+                    pass
+
             qty = 1
             for q_k in ("count", "quantity", "qty", "amount"):
                 if q_k in threat and threat[q_k] is not None:
@@ -159,42 +185,35 @@ class NeptunApiService:
 
             raw_text = str(threat.get("explanationShort") or threat.get("description") or f"{title or 'Повітряна ціль'} в районі {loc_name}").strip()
 
-            # Destination Extraction
+            # Destination Extraction:
+            # 1. Look for explicit target city in explanation (e.g. "курсом на Вознесенськ", "вектор на Умань")
             dest_name = None
             dest_lat = None
             dest_lon = None
 
-            # 1. Direct destination field
             direct_dest = threat.get("destination") or threat.get("dest") or threat.get("targetLocality") or threat.get("directionLocality")
-            if direct_dest and isinstance(direct_dest, str):
+            if direct_dest and isinstance(direct_dest, str) and not direct_dest.lower().endswith(("область", "області", "щина")):
                 dest_geo = lookup_location(direct_dest)
                 if dest_geo:
                     dest_name = dest_geo[0]
                     dest_lat = dest_geo[1]
                     dest_lon = dest_geo[2]
-                    heading_deg = compute_spherical_bearing(lat, lon, dest_lat, dest_lon)
 
-            # 2. NLP Extraction from text
             if not dest_lat:
                 curr_geo, parsed_dest = extract_current_and_destination(raw_text)
-                if parsed_dest and (abs(parsed_dest[1] - lat) > 0.01 or abs(parsed_dest[2] - lon) > 0.01):
-                    dest_name = parsed_dest[0]
-                    dest_lat = parsed_dest[1]
-                    dest_lon = parsed_dest[2]
-                    heading_deg = compute_spherical_bearing(lat, lon, dest_lat, dest_lon)
-                elif curr_geo and curr_geo[0].lower() != loc_name.lower():
-                    dest_name = curr_geo[0]
-                    dest_lat = curr_geo[1]
-                    dest_lon = curr_geo[2]
-                    heading_deg = compute_spherical_bearing(lat, lon, dest_lat, dest_lon)
+                if parsed_dest and not parsed_dest[0].lower().endswith(("область", "області", "щина", "район")):
+                    if abs(parsed_dest[1] - lat) > 0.02 or abs(parsed_dest[2] - lon) > 0.02:
+                        dest_name = parsed_dest[0]
+                        dest_lat = parsed_dest[1]
+                        dest_lon = parsed_dest[2]
 
-            # 3. Heading forward projection if no explicit town
+            # 2. If no explicit destination town, project forward along Neptun's exact heading
             if not dest_lat:
                 if heading_deg != 0.0:
                     p_lat, p_lon = calculate_projected_point(lat, lon, heading_deg, distance_km=80.0)
                     dest_lat = round(p_lat, 4)
                     dest_lon = round(p_lon, 4)
-                    dest_name = f"Курс {round(heading_deg)}°"
+                    dest_name = f"Курс {round(heading_deg)}° ({self._bearing_to_heading(heading_deg).value})"
                 else:
                     if lat < 47.0:
                         default_h = 315.0
@@ -208,7 +227,7 @@ class NeptunApiService:
                     p_lat, p_lon = calculate_projected_point(lat, lon, default_h, distance_km=80.0)
                     dest_lat = round(p_lat, 4)
                     dest_lon = round(p_lon, 4)
-                    dest_name = f"Курс {round(default_h)}°"
+                    dest_name = f"Курс {round(default_h)}° ({self._bearing_to_heading(default_h).value})"
 
             heading = self._bearing_to_heading(heading_deg)
 
@@ -219,11 +238,12 @@ class NeptunApiService:
                 target_type=target_type,
                 target_count=qty,
                 location_name=loc_name,
-                region_name=threat.get("region"),
+                region_name=raw_region,
                 lat=lat,
                 lon=lon,
                 heading=heading,
                 heading_deg=heading_deg,
+                speed_kmh=speed_kmh,
                 destination=dest_name,
                 dest_lat=dest_lat,
                 dest_lon=dest_lon,

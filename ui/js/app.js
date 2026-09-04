@@ -316,7 +316,7 @@ function flightAnimationLoop(currentTimestamp) {
                 continue;
             }
 
-            // LINEAR FLIGHT MODE
+            // LINEAR FLIGHT MODE (Smooth Glide with Dead-Reckoning & LERP Fusion)
             const headingDeg = (target.heading_deg !== undefined && target.heading_deg !== null) ? target.heading_deg : 315.0;
             const speedKmh = (target.speed_kmh || 185.0) * speedMultiplier;
 
@@ -327,10 +327,25 @@ function flightAnimationLoop(currentTimestamp) {
             const dLat = (distKm / 111.0) * Math.cos(rad);
             const dLon = (distKm / (111.0 * Math.cos((obj.currentPos[0] * Math.PI) / 180.0))) * Math.sin(rad);
 
-            obj.currentPos[0] += dLat;
-            obj.currentPos[1] += dLon;
+            // Smoothly converge towards server ground-truth GPS coordinates without snapping
+            if (obj.serverPos) {
+                const lerpWeight = Math.min(dtSeconds * 2.0, 0.15);
+                obj.currentPos[0] += (obj.serverPos[0] - obj.currentPos[0]) * lerpWeight + dLat * (1.0 - lerpWeight);
+                obj.currentPos[1] += (obj.serverPos[1] - obj.currentPos[1]) * lerpWeight + dLon * (1.0 - lerpWeight);
+                obj.serverPos[0] += dLat;
+                obj.serverPos[1] += dLon;
+            } else {
+                obj.currentPos[0] += dLat;
+                obj.currentPos[1] += dLon;
+            }
 
             obj.marker.setLatLng(obj.currentPos);
+
+            const iconEl = obj.marker.getElement();
+            if (iconEl) {
+                const iconInner = iconEl.querySelector('.radar-threat-icon');
+                if (iconInner) iconInner.style.transform = `rotate(${headingDeg}deg)`;
+            }
 
             if (obj.vectorLine) {
                 const forwardPoint = calculateProjectedPoint(obj.currentPos[0], obj.currentPos[1], headingDeg, 25);
@@ -426,11 +441,16 @@ function renderTargetsOnMap(targets) {
         if (markersMap.has(target.target_id)) {
             const obj = markersMap.get(target.target_id);
             obj.targetData = target;
+            obj.serverPos = [serverLatLng[0], serverLatLng[1]];
             
-            if (!target.is_circling) {
+            if (target.is_circling) {
+                obj.currentPos = [serverLatLng[0], serverLatLng[1]];
+                obj.marker.setLatLng(serverLatLng);
+            } else {
+                // If position jumped significantly (> 50km), update base
                 const dLat = Math.abs(obj.currentPos[0] - serverLatLng[0]);
                 const dLon = Math.abs(obj.currentPos[1] - serverLatLng[1]);
-                if (dLat > 0.05 || dLon > 0.05) {
+                if (dLat > 0.45 || dLon > 0.45) {
                     obj.currentPos = [serverLatLng[0], serverLatLng[1]];
                     obj.marker.setLatLng(serverLatLng);
                 }
@@ -482,6 +502,7 @@ function renderTargetsOnMap(targets) {
                 trajectoryLine: trajectoryLine,
                 hazardPolygon: hazardPolygon,
                 currentPos: [serverLatLng[0], serverLatLng[1]],
+                serverPos: [serverLatLng[0], serverLatLng[1]],
                 targetData: target
             });
         }

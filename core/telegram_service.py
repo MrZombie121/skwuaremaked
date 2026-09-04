@@ -318,6 +318,18 @@ class TelegramService:
                     if not is_monitored:
                         return
 
+                # Extract actual Telegram publication timestamp
+                msg_date = getattr(event, 'date', None)
+                if msg_date:
+                    msg_ts = msg_date.timestamp()
+                else:
+                    msg_ts = time.time()
+
+                # Ignore messages published more than 10 minutes (600s) ago
+                if (time.time() - msg_ts) > 600:
+                    logger.debug(f"Skipping old message from [{channel_title}] (published {int(time.time() - msg_ts)}s ago)")
+                    return
+
                 # Extract reply_to_msg_id if this message is a reply update
                 reply_to_id = getattr(event, 'reply_to_msg_id', None)
                 if not reply_to_id and hasattr(event, 'message') and event.message and event.message.reply_to:
@@ -328,7 +340,7 @@ class TelegramService:
                     message_id=event.id,
                     reply_to_msg_id=reply_to_id,
                     text=event.raw_text or "",
-                    timestamp=time.time()
+                    timestamp=msg_ts
                 )
                 logger.info(f"Telegram Message from [{channel_title}]: {(event.raw_text or '')[:60]}...")
                 await self.message_callback(msg)
