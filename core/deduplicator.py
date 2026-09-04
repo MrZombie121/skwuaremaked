@@ -94,7 +94,48 @@ class ThreatDeduplicator:
         now = time.time()
         self.cleanup_expired()
 
-        # 1. Telegram Reply-To Check
+        # 1. Telegram Reply-To or Explicit Event ID Check
+        if event.event_id:
+            event_key = (event.source_channel, event.event_id)
+            if event_key in self.msg_to_target_map:
+                target_id = self.msg_to_target_map[event_key]
+                if target_id in self.active_targets:
+                    target = self.active_targets[target_id]
+
+                    if event.is_clear_signal:
+                        target.status = ThreatStatus.DESTROYED
+                        del self.active_targets[target_id]
+                        target.raw_reports.append(f"[{event.source_channel}] (ЗБИТО/ВІДБІЙ) {event.raw_text}")
+                        return target, False
+
+                    target.current_lat = event.lat
+                    target.current_lon = event.lon
+                    target.current_location_name = event.location_name
+
+                    if event.destination:
+                        target.destination_name = event.destination
+                        target.dest_lat = event.dest_lat
+                        target.dest_lon = event.dest_lon
+                        target.is_circling = False
+                        target.circling_start = None
+
+                    if event.heading_deg != 0.0:
+                        target.heading_deg = event.heading_deg
+                        target.heading = event.heading
+                    elif target.dest_lat is not None and target.dest_lon is not None:
+                        target.heading_deg = compute_spherical_bearing(target.current_lat, target.current_lon, target.dest_lat, target.dest_lon)
+
+                    target.distance_to_dest_km = haversine_distance_km(target.current_lat, target.current_lon, target.dest_lat, target.dest_lon) if target.dest_lat else None
+                    target.eta_minutes = self._compute_eta(target.current_lat, target.current_lon, target.dest_lat, target.dest_lon, target.speed_kmh)
+                    target.last_updated = event.timestamp
+                    target.raw_reports.append(f"[{event.source_channel}] {event.raw_text}")
+                    if len(target.raw_reports) > 15:
+                        target.raw_reports = target.raw_reports[-15:]
+                    target.trajectory.append([target.current_lat, target.current_lon, event.timestamp])
+                    target.hazard_cone = generate_hazard_cone_polygon(target.current_lat, target.current_lon, target.heading_deg)
+
+                    return target, False
+
         if event.reply_to_msg_id:
             parent_key = (event.source_channel, event.reply_to_msg_id)
             if parent_key in self.msg_to_target_map:
@@ -285,6 +326,8 @@ class ThreatDeduplicator:
         )
         self.active_targets[new_id] = new_target
 
+        if event.event_id:
+            self.msg_to_target_map[(event.source_channel, event.event_id)] = new_id
         if event.message_id:
             self.msg_to_target_map[(event.source_channel, event.message_id)] = new_id
 

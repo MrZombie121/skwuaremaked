@@ -2,15 +2,18 @@
 <html lang="uk">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>SKYWATCH — Тактичний радар моніторингу повітряних загроз [Україна]</title>
+    <!-- Resource Preconnect for High-Speed Loading -->
+    <link rel="preconnect" href="https://unpkg.com" crossorigin>
+    <link rel="preconnect" href="https://mt0.google.com" crossorigin>
+    <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <!-- Tactical Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700;800&family=Orbitron:wght@600;700;800;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/ui/css/style.css">
+    <link rel="stylesheet" href="/ui/css/style.css?v=2.6.0">
 </head>
 <body>
     <!-- Top HUD Header -->
@@ -155,6 +158,28 @@
         </aside>
     </div>
 
+    <!-- Mobile Navigation Bottom Bar (Screens <= 900px) -->
+    <nav class="mobile-bottom-nav" id="mobile-nav">
+        <button class="mobile-tab-btn active" data-tab="radar">
+            <span class="tab-icon">🗺️</span>
+            <span class="tab-label">РАДАР</span>
+        </button>
+        <button class="mobile-tab-btn" data-tab="intercept">
+            <span class="tab-icon">📡</span>
+            <span class="tab-label">ТЕЛЕГРАМ</span>
+            <span class="mobile-badge" id="mobile-log-badge">0</span>
+        </button>
+        <button class="mobile-tab-btn" data-tab="telemetry">
+            <span class="tab-icon">🎯</span>
+            <span class="tab-label">ЦІЛІ</span>
+            <span class="mobile-badge threat-badge" id="mobile-threat-badge">0</span>
+        </button>
+        <button class="mobile-tab-btn" id="btn-mobile-settings">
+            <span class="tab-icon">⚙️</span>
+            <span class="tab-label">ОПЦІЇ</span>
+        </button>
+    </nav>
+
     <!-- MODAL: Telegram Channels & Folder Manager -->
     <div class="modal-backdrop" id="modal-channels" style="display: none;">
         <div class="modal-dialog">
@@ -273,7 +298,7 @@
                             <span class="sys-name">SKYWATCH C4ISR RADAR</span>
                             <span class="badge-tag">v2.0.0 PROFESSIONAL</span>
                         </div>
-                        <span class="sys-build text-cyan">BUILD: 0010.2026.a7f9b2c-RELEASE</span>
+                        <span class="sys-build text-cyan">BUILD: 1421.2026.f8c2e9b-RELEASE (від 04.09.2026)</span>
                     </div>
                     <div class="sys-specs-grid">
                         <div class="spec-item"><span class="lbl">ЯДРО ОБРОБКИ:</span> <span class="val text-green">FastAPI + AsyncIO Engine</span></div>

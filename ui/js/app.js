@@ -498,8 +498,10 @@ function updateUI(targets) {
     const missileEl = document.getElementById('missile-count');
     const ballisticEl = document.getElementById('ballistic-count');
     const kabEl = document.getElementById('kab-count');
+    const mobThreatBadge = document.getElementById('mobile-threat-badge');
 
     if (totalEl) totalEl.innerText = targets.length;
+    if (mobThreatBadge) mobThreatBadge.innerText = targets.length;
     if (shahedEl) shahedEl.innerText = targets.filter(t => t.target_type === 'SHAHED').length;
     if (rsEl) rsEl.innerText = targets.filter(t => t.target_type === 'JET_UAV').length;
     if (missileEl) missileEl.innerText = targets.filter(t => t.target_type === 'MISSILE').length;
@@ -624,7 +626,9 @@ function renderTargetDetail(tgt) {
 function appendTerminalLog(logData) {
     logCount++;
     const counterEl = document.getElementById('log-counter');
+    const mobLogBadge = document.getElementById('mobile-log-badge');
     if (counterEl) counterEl.innerText = `${logCount} msgs`;
+    if (mobLogBadge) mobLogBadge.innerText = `${logCount}`;
 
     const terminal = document.getElementById('terminal-logs');
     if (!terminal) return;
@@ -976,6 +980,25 @@ function setupEventListeners() {
             renderTargetsOnMap(activeTargets);
             updateUI(activeTargets);
         });
+    });
+
+    // Mobile Bottom Navigation Tabs Handler
+    document.querySelectorAll('.mobile-bottom-nav .mobile-tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const tab = btn.getAttribute('data-tab');
+            if (tab) {
+                document.querySelectorAll('.mobile-bottom-nav .mobile-tab-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                document.body.setAttribute('data-mobile-view', tab);
+                if (tab === 'radar' && map) {
+                    setTimeout(() => map.invalidateSize(), 50);
+                }
+            }
+        });
+    });
+
+    document.getElementById('btn-mobile-settings')?.addEventListener('click', () => {
+        openModal('modal-settings');
     });
 
     // Layer Switcher Buttons

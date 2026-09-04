@@ -14,8 +14,9 @@ if hasattr(sys.stderr, 'reconfigure'):
     sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
 from typing import List, Set, Dict, Any, Optional
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel
@@ -37,6 +38,9 @@ logger = logging.getLogger("SkyWatch.Server")
 
 app = FastAPI(title="SkyWatch Tactical Air Threat Radar", version="2.0.0")
 
+# Enable GZip compression for ultra-fast page load & payload transfer
+app.add_middleware(GZipMiddleware, minimum_size=500)
+
 # Enable CORS for cloud deployment and reverse proxies
 app.add_middleware(
     CORSMiddleware,
@@ -50,8 +54,16 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 UI_DIR = os.path.join(BASE_DIR, "ui")
 MARKERS_DIR = os.path.join(BASE_DIR, "markers")
 
-app.mount("/markers", StaticFiles(directory=MARKERS_DIR), name="markers")
-app.mount("/ui", StaticFiles(directory=UI_DIR), name="ui")
+# Custom static files class with caching headers for lightning-fast page loading
+class CachedStaticFiles(StaticFiles):
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        if path.endswith(('.png', '.jpg', '.jpeg', '.svg', '.woff2', '.woff', '.css', '.js')):
+            response.headers["Cache-Control"] = "public, max-age=86400, stale-while-revalidate=3600"
+        return response
+
+app.mount("/markers", CachedStaticFiles(directory=MARKERS_DIR), name="markers")
+app.mount("/ui", CachedStaticFiles(directory=UI_DIR), name="ui")
 
 # Core singletons
 parser = TelegramThreatParser()
@@ -101,12 +113,15 @@ class ConnectionManager:
     async def broadcast(payload: dict):
         if not connected_clients:
             return
-        dead_clients = set()
-        for client in list(connected_clients):
+        dead_clients = []
+        
+        async def _safe_send(ws: WebSocket):
             try:
-                await client.send_json(payload)
+                await ws.send_json(payload)
             except Exception:
-                dead_clients.add(client)
+                dead_clients.append(ws)
+
+        await asyncio.gather(*[_safe_send(c) for c in list(connected_clients)], return_exceptions=True)
         for dead in dead_clients:
             connected_clients.discard(dead)
 

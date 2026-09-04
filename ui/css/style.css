@@ -1038,3 +1038,173 @@ body {
 .text-pink { color: var(--color-pink) !important; }
 .text-yellow { color: var(--color-yellow) !important; }
 .text-purple { color: var(--color-purple) !important; }
+
+/* ==========================================================================
+   MOBILE & TABLET RESPONSIVE LAYOUT (Screens <= 900px)
+   ========================================================================== */
+.mobile-bottom-nav {
+    display: none;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100vw;
+    height: 56px;
+    background: #080d14;
+    border-top: 1px solid var(--border-color);
+    z-index: 1500;
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.9);
+}
+
+.mobile-tab-btn {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 700;
+    cursor: pointer;
+    position: relative;
+    touch-action: manipulation;
+    transition: all 0.2s ease;
+}
+
+.mobile-tab-btn.active {
+    color: var(--color-cyan);
+    background: rgba(0, 229, 255, 0.08);
+}
+
+.tab-icon {
+    font-size: 16px;
+}
+
+.mobile-badge {
+    position: absolute;
+    top: 6px;
+    right: calc(50% - 20px);
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    color: var(--text-muted);
+    font-size: 8.5px;
+    padding: 0 4px;
+    border-radius: 8px;
+    font-weight: 800;
+}
+
+.mobile-badge.threat-badge {
+    background: var(--color-red);
+    color: #fff;
+    border-color: #fff;
+}
+
+@media (max-width: 900px) {
+    body {
+        height: 100vh;
+        height: 100dvh;
+        padding-bottom: 56px;
+    }
+
+    .hud-header {
+        height: auto;
+        min-height: 50px;
+        padding: 6px 10px;
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+
+    .logo-title h1 {
+        font-size: 13px;
+    }
+
+    .sub-title {
+        display: none;
+    }
+
+    .hud-stats {
+        overflow-x: auto;
+        width: 100%;
+        padding-bottom: 2px;
+        scrollbar-width: none;
+    }
+    .hud-stats::-webkit-scrollbar {
+        display: none;
+    }
+
+    .stat-box {
+        min-width: 60px;
+        padding: 3px 6px;
+    }
+
+    .stat-value {
+        font-size: 13px;
+    }
+
+    .hud-controls {
+        display: none;
+    }
+
+    .main-layout {
+        height: calc(100dvh - 90px - 56px);
+        position: relative;
+    }
+
+    .mobile-bottom-nav {
+        display: flex;
+    }
+
+    /* Tab Switching Mode on Mobile */
+    .sidebar-left, .sidebar-right {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 1000;
+        display: none;
+    }
+
+    body[data-mobile-view="radar"] #map-container {
+        display: block;
+        width: 100%;
+        height: 100%;
+    }
+    body[data-mobile-view="radar"] .sidebar-left,
+    body[data-mobile-view="radar"] .sidebar-right {
+        display: none !important;
+    }
+
+    body[data-mobile-view="intercept"] .sidebar-left {
+        display: flex !important;
+    }
+    body[data-mobile-view="intercept"] #map-container,
+    body[data-mobile-view="intercept"] .sidebar-right {
+        display: none !important;
+    }
+
+    body[data-mobile-view="telemetry"] .sidebar-right {
+        display: flex !important;
+    }
+    body[data-mobile-view="telemetry"] #map-container,
+    body[data-mobile-view="telemetry"] .sidebar-left {
+        display: none !important;
+    }
+
+    .modal-dialog, .modal-dialog.settings-dialog, .modal-dialog.auth-dialog {
+        width: 96vw;
+        max-height: 92vh;
+        margin: 10px;
+    }
+
+    .map-coordinates {
+        font-size: 9px;
+        padding: 2px 6px;
+        bottom: 6px;
+        left: 6px;
+    }
+}
+.text-purple { color: var(--color-purple) !important; }
