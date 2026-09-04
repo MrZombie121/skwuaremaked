@@ -80,11 +80,12 @@ class ConnectionManager:
         connected_clients.add(websocket)
         logger.info(f"WebSocket client connected. Active clients: {len(connected_clients)}")
         
-        # Send initial state snapshot
+        # Send initial state snapshot with recent logs
         targets = [t.model_dump() for t in deduplicator.get_all_active()]
         channels = db.get_all_channels()
         tg_status = telegram_service.get_status() if telegram_service else {}
         sim_status = simulator.is_running if simulator else False
+        recent_logs = db.get_recent_logs(60)
         
         await websocket.send_json({
             "type": "INITIAL_STATE",
@@ -93,6 +94,7 @@ class ConnectionManager:
                 "channels": channels,
                 "telegram": tg_status,
                 "simulator_active": sim_status,
+                "logs": recent_logs,
                 "config": {
                     "bounds": config.UKRAINE_BOUNDS,
                     "center": config.UKRAINE_CENTER,
@@ -125,8 +127,35 @@ class ConnectionManager:
         for dead in dead_clients:
             connected_clients.discard(dead)
 
+async def on_neptun_snapshot_received(active_events: List[ParsedThreatEvent], active_ids: Set[str]):
+    """Synchronizes active snapshot from Neptun API, removing any disappeared/neutralized targets immediately."""
+    # 1. Reconcile and purge disappeared targets from this source
+    removed_ids = deduplicator.sync_source_active_targets("Додаткове джерело", active_ids)
+    
+    # 2. Process all current active events
+    has_new = False
+    for event in active_events:
+        results = deduplicator.process_event_multi(event)
+        for target, is_new in results:
+            if is_new:
+                has_new = True
+            if target.target_id != "CLEAR":
+                db.save_or_update_target(target.model_dump())
+
+    # 3. Broadcast updated active state
+    all_targets = [t.model_dump() for t in deduplicator.get_all_active()]
+    await ConnectionManager.broadcast({
+        "type": "TARGETS_UPDATE",
+        "data": {
+            "targets": all_targets,
+            "is_new": has_new,
+            "removed_count": len(removed_ids)
+        },
+        "timestamp": time.time()
+    })
+
 async def on_neptun_event_received(event: ParsedThreatEvent):
-    """Callback for threat events from Neptun API (spawns separate individual targets)."""
+    """Callback for single threat events from Neptun API (spawns separate individual targets)."""
     results = deduplicator.process_event_multi(event)
     has_new = False
     
@@ -261,8 +290,17 @@ async def startup_event():
 
     telegram_service = TelegramService(message_callback=on_message_received)
     simulator = TacticalSimulator(message_callback=on_message_received)
-    neptun_service = NeptunApiService(event_callback=on_neptun_event_received)
+    neptun_service = NeptunApiService(event_callback=on_neptun_event_received, snapshot_callback=on_neptun_snapshot_received)
     
+    # Auto-start additional source (Neptun) if persisted as enabled in Turso / settings
+    try:
+        nep_saved = await turso_db.get_setting("neptun_enabled") or db.get_setting("neptun_enabled", "false")
+        if str(nep_saved).lower() == "true":
+            await neptun_service.start()
+            logger.info("Automatically restored and started additional source (Neptun) from Turso Cloud settings.")
+    except Exception as ne:
+        logger.warning(f"Neptun auto-restore notice: {ne}")
+
     # Initialize Telegram client
     tg_connected = await telegram_service.initialize()
     if not tg_connected:
@@ -460,6 +498,10 @@ async def login_telegram(req: TelegramLoginSubmit):
 
 # --- TARGETS, STATS & CONTROL API ---
 
+@app.get("/api/logs")
+async def get_logs(limit: int = 60):
+    return {"logs": db.get_recent_logs(limit)}
+
 @app.get("/api/targets")
 async def get_targets():
     return {"targets": [t.model_dump() for t in deduplicator.get_all_active()]}
@@ -534,10 +576,20 @@ class NeptunToggleRequest(BaseModel):
 async def toggle_neptun(req: NeptunToggleRequest):
     if not neptun_service:
         raise HTTPException(status_code=500, detail="Neptun service not ready")
+    
     if req.enabled:
         await neptun_service.start()
     else:
         await neptun_service.stop()
+
+    # Save state to Turso Cloud DB and local DB
+    val_str = "true" if req.enabled else "false"
+    db.set_setting("neptun_enabled", val_str)
+    try:
+        await turso_db.set_setting("neptun_enabled", val_str)
+    except Exception as te:
+        logger.warning(f"Failed to persist Neptun state to Turso: {te}")
+
     return {"status": "ok", "neptun_active": neptun_service.is_enabled, "connected": neptun_service.is_connected}
 
 @app.post("/api/clear")

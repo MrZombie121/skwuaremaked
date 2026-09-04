@@ -27,9 +27,9 @@ MIN_ZOOM = 5.0
 MAX_ZOOM = 14.0
 
 # Deduplication & Clustering Parameters
-DEDUPLICATION_RADIUS_KM = 45.0          # Max distance to correlate into the same cluster
-DEDUPLICATION_TIME_WINDOW_SEC = 600      # 10 minutes time window for message correlation
-TARGET_TTL_SECONDS = 900                # 15 minutes without updates before marking inactive/clearing
+DEDUPLICATION_RADIUS_KM = 35.0          # Max distance to correlate into the same cluster
+DEDUPLICATION_TIME_WINDOW_SEC = 300      # 5 minutes time window for message correlation
+TARGET_TTL_SECONDS = 300                # 5 minutes without updates before marking inactive/clearing
 
 # Admin & Maintenance System Settings
 ADMIN_SECRET_KEY = os.getenv("ADMIN_SECRET_KEY", "skywatch-secret-key-2026")

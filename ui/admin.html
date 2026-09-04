@@ -367,60 +367,100 @@
         }
 
         async function fetchAdminData() {
+            // 1. Maintenance Status from Turso
             try {
-                // 1. Maintenance Status from Turso
                 const mResp = await fetch(`/api/maintenance/status`);
-                const mData = await mResp.json();
-                
-                isMaintActive = mData.maintenance_mode;
-                document.getElementById('maint-reason-input').value = mData.reason || '';
-                
-                if (mData.end_timestamp && mData.end_timestamp > 0) {
-                    const date = new Date(mData.end_timestamp * 1000);
-                    const tzOffset = date.getTimezoneOffset() * 60000;
-                    const localISOTime = (new Date(date.getTime() - tzOffset)).toISOString().slice(0, 16);
-                    document.getElementById('maint-datetime-input').value = localISOTime;
+                if (mResp.ok) {
+                    const mData = await mResp.json();
+                    isMaintActive = Boolean(mData.maintenance_mode);
+                    const reasonInput = document.getElementById('maint-reason-input');
+                    if (reasonInput && !reasonInput.matches(':focus')) {
+                        reasonInput.value = mData.reason || '';
+                    }
+                    
+                    if (mData.end_timestamp && mData.end_timestamp > 0) {
+                        const date = new Date(mData.end_timestamp * 1000);
+                        const tzOffset = date.getTimezoneOffset() * 60000;
+                        const localISOTime = (new Date(date.getTime() - tzOffset)).toISOString().slice(0, 16);
+                        const dtInput = document.getElementById('maint-datetime-input');
+                        if (dtInput && !dtInput.matches(':focus')) {
+                            dtInput.value = localISOTime;
+                        }
+                    }
+                    updateMaintUI();
                 }
-                updateMaintUI();
-
-                // 2. Simulator Status
-                const sResp = await fetch('/api/simulator/status');
-                const sData = await sResp.json();
-                isSimActive = sData.simulator_active;
-                updateSimUI();
-
-                // 3. Additional Source Status
-                const nResp = await fetch('/api/neptun/status');
-                const nData = await nResp.json();
-                isNeptunActive = nData.enabled || false;
-                updateNeptunUI();
-
-                // 4. Telegram Status
-                const tgResp = await fetch('/api/telegram/status');
-                const tgData = await tgResp.json();
-                const tgLabel = document.getElementById('tg-user-label');
-                const tgBadge = document.getElementById('tg-auth-badge');
-                
-                if (tgData.is_authorized && tgData.user) {
-                    tgLabel.innerText = `${tgData.user.first_name} (@${tgData.user.username || tgData.user.phone})`;
-                    tgBadge.innerText = "ONLINE";
-                    tgBadge.style.background = "rgba(0,255,136,0.15)";
-                    tgBadge.style.color = "#00ff88";
-                } else {
-                    tgLabel.innerText = "Очікує авторизації в settings.json";
-                    tgBadge.innerText = "OFFLINE";
-                    tgBadge.style.background = "rgba(255,145,0,0.15)";
-                    tgBadge.style.color = "#ff9100";
-                }
-
-                // 5. Channels count
-                const chResp = await fetch('/api/channels');
-                const chData = await chResp.json();
-                document.getElementById('tg-channels-count').innerText = chData.channels?.length || 0;
-                if (chData.folder_url) document.getElementById('admin-folder-url').value = chData.folder_url;
-
             } catch (e) {
-                console.error("Admin fetch error:", e);
+                console.warn("Maintenance fetch error:", e);
+            }
+
+            // 2. Simulator Status
+            try {
+                const sResp = await fetch('/api/simulator/status');
+                if (sResp.ok) {
+                    const sData = await sResp.json();
+                    isSimActive = Boolean(sData.simulator_active);
+                    updateSimUI();
+                }
+            } catch (e) {
+                console.warn("Simulator fetch error:", e);
+            }
+
+            // 3. Additional Source Status
+            try {
+                const nResp = await fetch('/api/neptun/status');
+                if (nResp.ok) {
+                    const nData = await nResp.json();
+                    isNeptunActive = Boolean(nData.enabled);
+                    updateNeptunUI();
+                }
+            } catch (e) {
+                console.warn("Source fetch error:", e);
+            }
+
+            // 4. Telegram Status
+            try {
+                const tgResp = await fetch('/api/telegram/status');
+                if (tgResp.ok) {
+                    const tgData = await tgResp.json();
+                    const tgLabel = document.getElementById('tg-user-label');
+                    const tgBadge = document.getElementById('tg-auth-badge');
+                    
+                    if (tgData.is_authorized && tgData.user) {
+                        if (tgLabel) tgLabel.innerText = `${tgData.user.first_name || 'Авторизовано'} (@${tgData.user.username || tgData.user.phone || ''})`;
+                        if (tgBadge) {
+                            tgBadge.innerText = "ONLINE";
+                            tgBadge.style.background = "rgba(0,255,136,0.15)";
+                            tgBadge.style.color = "#00ff88";
+                        }
+                    } else {
+                        if (tgLabel) tgLabel.innerText = "Очікує авторизації (натисніть кнопку нижче)";
+                        if (tgBadge) {
+                            tgBadge.innerText = "OFFLINE";
+                            tgBadge.style.background = "rgba(255,145,0,0.15)";
+                            tgBadge.style.color = "#ff9100";
+                        }
+                    }
+                }
+            } catch (e) {
+                console.warn("Telegram status fetch error:", e);
+            }
+
+            // 5. Channels count
+            try {
+                const chResp = await fetch('/api/channels');
+                if (chResp.ok) {
+                    const chData = await chResp.json();
+                    const countEl = document.getElementById('tg-channels-count');
+                    const folderInput = document.getElementById('admin-folder-url');
+                    
+                    const count = chData.channels ? chData.channels.length : 0;
+                    if (countEl) countEl.innerText = count;
+                    if (folderInput && chData.folder_url && !folderInput.matches(':focus')) {
+                        folderInput.value = chData.folder_url;
+                    }
+                }
+            } catch (e) {
+                console.warn("Channels count fetch error:", e);
             }
         }
 
@@ -577,7 +617,7 @@
             const sDiv = document.getElementById('admin-folder-status');
             sDiv.className = "sync-status";
             sDiv.style.display = "block";
-            sDiv.innerText = "⏳ Синхронізація...";
+            sDiv.innerText = "⏳ Отримання та приєднання каналів з папки...";
             try {
                 const resp = await fetch('/api/folder/sync', {
                     method: 'POST',
@@ -587,14 +627,17 @@
                 const data = await resp.json();
                 if (data.status === 'success' || data.status === 'saved_offline') {
                     sDiv.className = "sync-status success";
-                    sDiv.innerText = "✅ Папку успішно оновлено!";
+                    const count = data.imported_channels ? data.imported_channels.length : (data.channels ? data.channels.length : 0);
+                    sDiv.innerText = `✅ Папку успішно синхронізовано! Підключено ${data.total_channels || count} каналів.`;
                 } else {
                     sDiv.className = "sync-status error";
-                    sDiv.innerText = "❌ Помилка: " + (data.message || 'Не вдалося синхронізувати');
+                    sDiv.innerText = "❌ Помилка: " + (data.message || data.detail || 'Не вдалося синхронізувати');
                 }
             } catch (err) {
                 sDiv.className = "sync-status error";
                 sDiv.innerText = "❌ Помилка: " + err;
+            } finally {
+                await fetchAdminData();
             }
         });
 
@@ -704,7 +747,10 @@
             }
         });
 
-        document.addEventListener('DOMContentLoaded', fetchAdminData);
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchAdminData();
+            setInterval(fetchAdminData, 4000);
+        });
     </script>
 </body>
 </html>

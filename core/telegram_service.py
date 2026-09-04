@@ -180,7 +180,7 @@ class TelegramService:
     async def sync_folder(self, folder_url: str) -> Dict[str, Any]:
         """
         Parses a Telegram chatlist folder invite link (e.g. https://t.me/addlist/syGYtBj5T9AxNzIy),
-        fetches all 31 channels, joins them if needed, saves to channels.json, and starts live listener.
+        fetches all channels, joins newly added channels if needed, saves to channels.json, and starts live listener.
         """
         slug = self._extract_chatlist_slug(folder_url)
         if not slug:
@@ -197,30 +197,62 @@ class TelegramService:
             invite_result = await self.client(CheckChatlistInviteRequest(slug=slug))
             
             chats_found = []
-            folder_title = getattr(invite_result, 'title', 'Для монітору')
+            raw_title = getattr(invite_result, 'title', None)
+            folder_title = getattr(raw_title, 'text', str(raw_title or 'Для монітору'))
             folder_chats = list(getattr(invite_result, 'chats', []))
 
             for chat in folder_chats:
-                channel_info = {
+                chats_found.append({
                     "id": chat.id,
                     "title": getattr(chat, 'title', 'Channel'),
                     "username": getattr(chat, 'username', None)
-                }
-                chats_found.append(channel_info)
+                })
 
-            # Join missing peers in the chatlist folder if any
+            # Check and join any newly added/missing peers in the folder
             missing_peers = getattr(invite_result, 'missing_peers', [])
             if missing_peers:
-                logger.info(f"Joining {len(missing_peers)} new channels from folder...")
+                logger.info(f"Joining {len(missing_peers)} new channels added to folder...")
                 try:
-                    await self.client(JoinChatlistInviteRequest(slug=slug, peers=missing_peers))
+                    filter_id = getattr(invite_result, 'filter_id', None)
+                    if filter_id is not None:
+                        from telethon.tl.types import InputChatlistDialogFilter
+                        from telethon.tl.functions.chatlists import JoinChatlistUpdatesRequest
+                        await self.client(JoinChatlistUpdatesRequest(chatlist=InputChatlistDialogFilter(filter_id=filter_id), peers=missing_peers))
+                    else:
+                        await self.client(JoinChatlistInviteRequest(slug=slug, peers=missing_peers))
                 except Exception as je:
-                    logger.warning(f"Note on joining folder channels: {je}")
+                    logger.info(f"Joined peers note: {je}")
+
+            # Also resolve active dialogs to fetch fresh titles and channels
+            try:
+                dialogs = await self.client.get_dialogs(limit=100)
+                for d in dialogs:
+                    if d.is_channel:
+                        entity = d.entity
+                        c_id = entity.id
+                        c_user = getattr(entity, 'username', None)
+                        c_title = getattr(entity, 'title', 'Channel')
+                        
+                        matched = False
+                        for c in chats_found:
+                            if c['id'] == c_id or (c_user and c.get('username') == c_user):
+                                c['title'] = c_title
+                                c['username'] = c_user or c.get('username')
+                                matched = True
+                                break
+                        if not matched and getattr(d, 'folder_id', None):
+                            chats_found.append({
+                                "id": c_id,
+                                "title": c_title,
+                                "username": c_user
+                            })
+            except Exception as de:
+                logger.debug(f"Dialogs resolution note: {de}")
 
             # Store all channels in JSON DB
             if chats_found:
                 db.bulk_upsert_folder_channels(chats_found, folder_url)
-                logger.info(f"Successfully imported {len(chats_found)} channels from folder '{folder_title}' into data/channels.json.")
+                logger.info(f"Successfully imported/updated {len(chats_found)} channels from folder '{folder_title}' into data/channels.json.")
 
             # Attach live listener to all folder chat entities
             self._listening_chats = folder_chats
@@ -240,17 +272,8 @@ class TelegramService:
 
     # --- Real-Time Channel Listener ---
     async def start_listener(self):
-        """Subscribes Telethon to all active channels."""
+        """Subscribes Telethon to all incoming channel messages with smart channel matching."""
         if not self.client or not self.is_authorized:
-            return
-
-        target_chats = self._listening_chats
-        if not target_chats:
-            active_channels = db.get_all_channels(only_active=True)
-            target_chats = [ch.get("tg_channel_id") or ch.get("username") for ch in active_channels if ch.get("tg_channel_id") or ch.get("username")]
-
-        if not target_chats:
-            logger.info("No active channels configured in DB to listen.")
             return
 
         # Remove existing handler if any
@@ -260,14 +283,41 @@ class TelegramService:
             except Exception:
                 pass
 
-        logger.info(f"Setting up real-time listener for {len(target_chats)} channels...")
+        logger.info("Setting up real-time live Telegram message listener...")
 
-        @self.client.on(events.NewMessage(chats=target_chats))
+        @self.client.on(events.NewMessage)
         async def on_new_message(event):
             try:
+                if not event.chat:
+                    return
                 chat = await event.get_chat()
-                channel_title = getattr(chat, 'title', getattr(chat, 'username', 'Telegram Channel'))
+                chat_id = getattr(chat, 'id', None)
+                username = getattr(chat, 'username', None)
+                channel_title = getattr(chat, 'title', username or 'Telegram Channel')
                 
+                # Filter against active channels list in database
+                active_channels = db.get_all_channels(only_active=True)
+                if active_channels:
+                    is_monitored = False
+                    for ch in active_channels:
+                        ch_tg_id = ch.get("tg_channel_id")
+                        ch_user = (ch.get("username") or "").lower().strip("@")
+                        ch_title = (ch.get("title") or "").lower()
+                        
+                        if ch_tg_id and chat_id and (ch_tg_id == chat_id or abs(ch_tg_id) == abs(chat_id)):
+                            is_monitored = True
+                            channel_title = ch.get("title") or channel_title
+                            break
+                        if ch_user and username and ch_user == username.lower():
+                            is_monitored = True
+                            channel_title = ch.get("title") or channel_title
+                            break
+                        if ch_title and channel_title and (ch_title in channel_title.lower() or channel_title.lower() in ch_title):
+                            is_monitored = True
+                            break
+                    if not is_monitored:
+                        return
+
                 # Extract reply_to_msg_id if this message is a reply update
                 reply_to_id = getattr(event, 'reply_to_msg_id', None)
                 if not reply_to_id and hasattr(event, 'message') and event.message and event.message.reply_to:
@@ -277,16 +327,16 @@ class TelegramService:
                     channel=channel_title,
                     message_id=event.id,
                     reply_to_msg_id=reply_to_id,
-                    text=event.raw_text,
+                    text=event.raw_text or "",
                     timestamp=time.time()
                 )
-                logger.info(f"Telegram Message from [{channel_title}]: {event.raw_text[:60]}...")
+                logger.info(f"Telegram Message from [{channel_title}]: {(event.raw_text or '')[:60]}...")
                 await self.message_callback(msg)
             except Exception as ex:
                 logger.error(f"Error handling live Telegram message: {ex}")
 
         self._event_handler = on_new_message
-        logger.info(f"Telethon live listener is actively monitoring {len(target_chats)} Telegram channels.")
+        logger.info("Telethon live listener is actively monitoring Telegram channels.")
 
     async def restart_listener(self):
         """Restarts listener when channels list changes."""

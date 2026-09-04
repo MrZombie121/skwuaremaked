@@ -406,6 +406,25 @@ class ThreatDeduplicator:
 
         return list(self.active_targets.values())
 
+    def sync_source_active_targets(self, source_name: str, current_active_event_ids: set) -> List[str]:
+        """
+        Removes any active targets associated exclusively with `source_name` that are
+        no longer present in the latest snapshot of active IDs from that source (e.g. Neptun API).
+        Returns list of removed target IDs.
+        """
+        removed_ids = []
+        for tid, target in list(self.active_targets.items()):
+            if source_name in target.sources and len(target.sources) == 1:
+                associated_event_ids = [
+                    k[1] for k, v in self.msg_to_target_map.items()
+                    if k[0] == source_name and v == tid
+                ]
+                if associated_event_ids and not any(eid in current_active_event_ids for eid in associated_event_ids):
+                    target.status = ThreatStatus.DESTROYED
+                    del self.active_targets[tid]
+                    removed_ids.append(tid)
+        return removed_ids
+
     def remove_target(self, target_id: str) -> Optional[ActiveTarget]:
         """Manually mark target as shot down / neutralized."""
         if target_id in self.active_targets:

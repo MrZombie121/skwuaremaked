@@ -2,13 +2,13 @@
 NEPTUN API Integration Service for SkyWatch (High-Precision Air Threats & Navigation Engine)
 Connects to https://neptun.in.ua WebSocket stream and REST API,
 precisely places targets at their current GPS coordinates, extracts heading/bearing,
-detects destination settlements, and spawns all targets without dropping any.
+detects destination settlements, and synchronizes active threats without phantom targets.
 """
 import asyncio
 import logging
 import time
 import aiohttp
-from typing import Callable, Optional, Dict, Any, List
+from typing import Callable, Optional, Dict, Any, List, Set
 from core.models import ParsedThreatEvent, TargetType, HeadingDirection
 from core.geo_engine import (
     extract_current_and_destination,
@@ -21,8 +21,9 @@ from core.geo_engine import (
 logger = logging.getLogger("SkyWatch.NeptunService")
 
 class NeptunApiService:
-    def __init__(self, event_callback: Callable[[ParsedThreatEvent], Any]):
+    def __init__(self, event_callback: Callable[[ParsedThreatEvent], Any], snapshot_callback: Optional[Callable[[List[ParsedThreatEvent], Set[str]], Any]] = None):
         self.event_callback = event_callback
+        self.snapshot_callback = snapshot_callback
         self.base_url = "https://neptun.in.ua"
         self.ws_url = "wss://neptun.in.ua/api/v1/stream"
         self.is_enabled = False
@@ -30,7 +31,6 @@ class NeptunApiService:
         self._running_task: Optional[asyncio.Task] = None
         self._poll_task: Optional[asyncio.Task] = None
         self._session: Optional[aiohttp.ClientSession] = None
-        self._seen_threat_ids: Dict[str, float] = {}
 
     def _map_neptun_type(self, raw_type: str, title_text: str = "") -> TargetType:
         combined = f"{raw_type or ''} {title_text or ''}".lower()
@@ -91,7 +91,6 @@ class NeptunApiService:
         if isinstance(loc_obj, (list, tuple)) and len(loc_obj) >= 2:
             try:
                 lat_v, lon_v = float(loc_obj[0]), float(loc_obj[1])
-                # Check if swapped
                 if 20.0 <= lat_v <= 42.0 and 43.0 <= lon_v <= 54.0:
                     lat_v, lon_v = lon_v, lat_v
                 if 43.0 <= lat_v <= 54.0 and 20.0 <= lon_v <= 42.0:
@@ -107,26 +106,24 @@ class NeptunApiService:
             except (ValueError, TypeError):
                 pass
 
-        # 3. Area / Locality fallback lookup
-        for name_k in ("locality", "district", "region", "area", "name"):
-            loc_name = threat.get(name_k)
-            if loc_name and isinstance(loc_name, str):
-                geo = lookup_location(loc_name)
-                if geo:
-                    return geo[1], geo[2]
-
         return None
 
     def _convert_neptun_threat(self, threat: Dict[str, Any]) -> Optional[ParsedThreatEvent]:
         try:
-            tid = str(threat.get("id") or threat.get("uid") or threat.get("uuid") or "")
-            if not tid:
-                tid = f"trk_{int(time.time()*1000)%1000000}"
+            # Skip general area alerts without specific coordinates to avoid phantom targets
+            if threat.get("areaOnly") is True:
+                return None
+
+            status = str(threat.get("status") or threat.get("state") or "active").lower()
+            if status not in ("active", "flying", "in_flight", "tracked"):
+                return None
 
             coords = self._extract_coordinates(threat)
             if not coords:
                 return None
             lat, lon = coords
+
+            tid = str(threat.get("id") or threat.get("uid") or threat.get("uuid") or f"{lat:.4f}_{lon:.4f}")
 
             title = str(threat.get("title") or "")
             raw_type = str(threat.get("type") or threat.get("threatType") or threat.get("category") or "uav")
@@ -134,7 +131,7 @@ class NeptunApiService:
 
             loc_name = str(threat.get("locality") or threat.get("district") or threat.get("region") or threat.get("name") or "Україна")
             
-            # Heading extraction from all potential fields
+            # Heading extraction
             heading_deg = 0.0
             for h_k in ("heading", "bearing", "bearingDeg", "directionDeg", "azimuth"):
                 if h_k in threat and threat[h_k] is not None:
@@ -160,9 +157,6 @@ class NeptunApiService:
                     except (ValueError, TypeError):
                         pass
 
-            status = str(threat.get("status") or threat.get("state") or "active").lower()
-            is_clear = status in ("resolved", "stale", "destroyed", "neutralized", "inactive", "lost")
-
             raw_text = str(threat.get("explanationShort") or threat.get("description") or f"{title or 'Повітряна ціль'} в районі {loc_name}").strip()
 
             # Destination Extraction
@@ -170,7 +164,7 @@ class NeptunApiService:
             dest_lat = None
             dest_lon = None
 
-            # 1. Direct destination field from API
+            # 1. Direct destination field
             direct_dest = threat.get("destination") or threat.get("dest") or threat.get("targetLocality") or threat.get("directionLocality")
             if direct_dest and isinstance(direct_dest, str):
                 dest_geo = lookup_location(direct_dest)
@@ -180,7 +174,7 @@ class NeptunApiService:
                     dest_lon = dest_geo[2]
                     heading_deg = compute_spherical_bearing(lat, lon, dest_lat, dest_lon)
 
-            # 2. NLP Extraction from raw_text
+            # 2. NLP Extraction from text
             if not dest_lat:
                 curr_geo, parsed_dest = extract_current_and_destination(raw_text)
                 if parsed_dest and (abs(parsed_dest[1] - lat) > 0.01 or abs(parsed_dest[2] - lon) > 0.01):
@@ -194,7 +188,7 @@ class NeptunApiService:
                     dest_lon = curr_geo[2]
                     heading_deg = compute_spherical_bearing(lat, lon, dest_lat, dest_lon)
 
-            # 3. Heading forward projection if no explicit town name
+            # 3. Heading forward projection if no explicit town
             if not dest_lat:
                 if heading_deg != 0.0:
                     p_lat, p_lon = calculate_projected_point(lat, lon, heading_deg, distance_km=80.0)
@@ -202,7 +196,6 @@ class NeptunApiService:
                     dest_lon = round(p_lon, 4)
                     dest_name = f"Курс {round(heading_deg)}°"
                 else:
-                    # Default tactical forward vector based on region
                     if lat < 47.0:
                         default_h = 315.0
                     elif lon > 35.5:
@@ -234,13 +227,29 @@ class NeptunApiService:
                 destination=dest_name,
                 dest_lat=dest_lat,
                 dest_lon=dest_lon,
-                is_clear_signal=is_clear,
+                is_clear_signal=False,
                 timestamp=time.time(),
                 confidence=0.98
             )
         except Exception as e:
             logger.error(f"Error converting Neptun threat item: {e}")
             return None
+
+    async def _handle_threats_list(self, threats: List[Dict[str, Any]]):
+        active_events = []
+        active_ids = set()
+
+        for t in threats:
+            ev = self._convert_neptun_threat(t)
+            if ev:
+                active_events.append(ev)
+                active_ids.add(ev.event_id)
+
+        if self.snapshot_callback:
+            await self.snapshot_callback(active_events, active_ids)
+        else:
+            for ev in active_events:
+                await self.event_callback(ev)
 
     async def start(self):
         """Enables and starts live connection to Neptun."""
@@ -316,10 +325,7 @@ class NeptunApiService:
                 if resp.status == 200:
                     data = await resp.json()
                     threats = data.get("threats", [])
-                    for t in threats:
-                        ev = self._convert_neptun_threat(t)
-                        if ev:
-                            await self.event_callback(ev)
+                    await self._handle_threats_list(threats)
         except Exception as e:
             logger.debug(f"Neptun snapshot fetch notice: {e}")
 
@@ -333,10 +339,7 @@ class NeptunApiService:
 
             if msg_type == "snapshot":
                 threats = data.get("threats", [])
-                for t in threats:
-                    ev = self._convert_neptun_threat(t)
-                    if ev:
-                        await self.event_callback(ev)
+                await self._handle_threats_list(threats)
 
             elif msg_type == "upsert":
                 ev = self._convert_neptun_threat(data)

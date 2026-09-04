@@ -223,6 +223,10 @@ class JsonDatabase:
             logs = logs[:200]
         self._write_json(MESSAGES_LOG_FILE, logs)
 
+    def get_recent_logs(self, limit: int = 60) -> List[Dict[str, Any]]:
+        logs = self._read_json(MESSAGES_LOG_FILE, [])
+        return logs[:limit]
+
     # --- Targets & History API ---
     def save_or_update_target(self, target_data: Dict[str, Any]):
         targets = self._read_json(TARGETS_FILE, {})

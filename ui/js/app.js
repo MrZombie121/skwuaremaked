@@ -840,9 +840,10 @@ function connectWebSocket() {
                 const urlParams = new URLSearchParams(window.location.search);
                 const hasBypassKey = urlParams.has('key') || urlParams.has('bypass') || window.location.pathname.includes('test-radar');
 
-                const [tResp, mResp] = await Promise.all([
+                const [tResp, mResp, lResp] = await Promise.all([
                     fetch('/api/targets'),
-                    fetch('/api/maintenance/status')
+                    fetch('/api/maintenance/status'),
+                    fetch('/api/logs?limit=40')
                 ]);
                 
                 if (mResp.ok && !hasBypassKey) {
@@ -864,9 +865,43 @@ function connectWebSocket() {
                         }
                     }
                 }
+
+                if (lResp.ok && logCount === 0) {
+                    const lData = await lResp.json();
+                    if (lData.logs && lData.logs.length > 0) {
+                        renderInitialLogs(lData.logs);
+                    }
+                }
             } catch (_) {}
         }, 2500);
     }
+}
+
+function renderInitialLogs(logs) {
+    if (!Array.isArray(logs) || logs.length === 0) return;
+    const terminal = document.getElementById('terminal-logs');
+    if (!terminal) return;
+
+    terminal.innerHTML = '';
+    logCount = logs.length;
+    const counterEl = document.getElementById('log-counter');
+    const mobLogBadge = document.getElementById('mobile-log-badge');
+    if (counterEl) counterEl.innerText = `${logCount} msgs`;
+    if (mobLogBadge) mobLogBadge.innerText = `${logCount}`;
+
+    logs.forEach(log => {
+        const entry = document.createElement('div');
+        entry.className = `log-entry ${log.is_threat ? 'parsed' : ''}`;
+        const timeStr = log.timestamp ? new Date(log.timestamp * 1000).toLocaleTimeString('uk-UA', { timeZone: 'Europe/Kyiv' }) : 'LOG';
+        entry.innerHTML = `
+            <div class="log-meta">
+                <span class="log-channel">${log.channel_title || 'Telegram'}</span>
+                <span class="log-time">${timeStr}</span>
+            </div>
+            <div class="log-text">${log.raw_text || ''}</div>
+        `;
+        terminal.appendChild(entry);
+    });
 }
 
 function handleServerMessage(msg) {
@@ -876,6 +911,9 @@ function handleServerMessage(msg) {
             if (msg.data && msg.data.targets) {
                 renderTargetsOnMap(msg.data.targets);
                 updateUI(msg.data.targets);
+            }
+            if (msg.data && msg.data.logs) {
+                renderInitialLogs(msg.data.logs);
             }
             break;
 
