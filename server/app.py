@@ -32,6 +32,7 @@ from core.telegram_service import TelegramService
 from core.simulator import TacticalSimulator
 from core.neptun_service import NeptunApiService
 from core.turso_db import turso_db
+from core.gemini_service import gemini_analyst
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("SkyWatch.Server")
@@ -362,6 +363,19 @@ class MaintenanceToggleRequest(BaseModel):
     reason: Optional[str] = None
     end_timestamp: Optional[int] = None
 
+class GeminiReportRequest(BaseModel):
+    key: str
+
+@app.post("/api/admin/generate-report")
+async def generate_admin_report(req: GeminiReportRequest):
+    expected_key = db.get_setting("admin_secret_key") or config.ADMIN_SECRET_KEY
+    if req.key != expected_key:
+        raise HTTPException(status_code=403, detail="Доступ заборонено: невірний секретний ключ адміністратора")
+    
+    targets = deduplicator.get_all_active()
+    result = await gemini_analyst.generate_tactical_summary(targets)
+    return result
+
 @app.post("/api/admin/maintenance")
 async def toggle_maintenance_mode(req: MaintenanceToggleRequest):
     expected_key = db.get_setting("admin_secret_key") or config.ADMIN_SECRET_KEY
@@ -573,6 +587,13 @@ async def get_neptun_status():
     if neptun_service:
         return neptun_service.get_status()
     return {"enabled": False, "connected": False}
+
+@app.post("/api/neptun/refresh")
+async def refresh_neptun():
+    if not neptun_service:
+        raise HTTPException(status_code=500, detail="Neptun service not ready")
+    await neptun_service.refresh_now()
+    return {"status": "ok", "refreshed": True}
 
 class NeptunToggleRequest(BaseModel):
     enabled: bool

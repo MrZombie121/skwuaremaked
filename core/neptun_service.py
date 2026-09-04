@@ -296,13 +296,20 @@ class NeptunApiService:
         logger.info("Neptun API service stopped.")
 
     async def _poll_rest_loop(self):
-        """Polls Neptun REST snapshot periodically every 5 seconds for 100% reliability."""
+        """Polls Neptun REST snapshot periodically every 5 minutes (300 seconds) to refresh all live targets."""
         while self.is_enabled:
             try:
+                logger.info("Executing scheduled 5-minute threat data query to Neptun API...")
                 await self._fetch_rest_snapshot()
             except Exception as e:
-                logger.debug(f"Neptun REST polling notice: {e}")
-            await asyncio.sleep(5.0)
+                logger.debug(f"Neptun REST 5-minute polling notice: {e}")
+            await asyncio.sleep(300.0)
+
+    async def refresh_now(self):
+        """Forces an immediate threat data query to Neptun API and updates the map."""
+        if self.is_enabled:
+            logger.info("Executing immediate manual refresh query to Neptun API...")
+            await self._fetch_rest_snapshot()
 
     async def _connection_loop(self):
         """Main WebSocket connection loop with auto-reconnect."""
