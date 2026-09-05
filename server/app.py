@@ -37,7 +37,7 @@ from core.gemini_service import gemini_analyst
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("SkyWatch.Server")
 
-app = FastAPI(title="SkyWatch Tactical Air Threat Radar", version="2.0.0")
+app = FastAPI(title="SkyWatch Tactical Air Threat Radar", version="2.1.0")
 
 # Enable GZip compression for ultra-fast page load & payload transfer
 app.add_middleware(GZipMiddleware, minimum_size=500)
@@ -86,7 +86,7 @@ class ConnectionManager:
         channels = db.get_all_channels()
         tg_status = telegram_service.get_status() if telegram_service else {}
         sim_status = simulator.is_running if simulator else False
-        recent_logs = db.get_recent_logs(60)
+        recent_logs = db.get_recent_logs(150)
         
         await websocket.send_json({
             "type": "INITIAL_STATE",
@@ -439,7 +439,7 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "SkyWatch",
-        "version": "2.0.0",
+        "version": "2.1.0",
         "timestamp": time.time(),
         "telegram_connected": telegram_service.is_connected if telegram_service else False,
         "active_targets": len(deduplicator.get_all_active()),
@@ -553,7 +553,7 @@ async def login_telegram(req: TelegramLoginSubmit):
 # --- TARGETS, STATS & CONTROL API ---
 
 @app.get("/api/logs")
-async def get_logs(limit: int = 60):
+async def get_logs(limit: int = 150):
     return {"logs": db.get_recent_logs(limit)}
 
 @app.get("/api/targets")

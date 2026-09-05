@@ -54,6 +54,7 @@ THREAT_SPEED_PROFILES: Dict[str, float] = {
     "RECON": 120.0,       # Reconnaissance UAV (Orlan, Supercam, Zala) (~120 km/h)
     "FPV": 110.0,         # Tactical FPV Drone (~110 km/h)
     "DECOY": 175.0,       # Decoy / Simulator Drone (Parodiya, Gerber) (~175 km/h)
+    "AIRCRAFT": 920.0,    # Tactical / Strategic Military Aircraft (Su-34, Su-35, MiG-31, Tu-95, ТА) (~920 km/h)
     "UNKNOWN": 200.0
 }
 

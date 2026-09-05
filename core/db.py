@@ -219,11 +219,11 @@ class JsonDatabase:
             "is_threat": bool(is_threat),
             "timestamp": now
         })
-        if len(logs) > 200:
-            logs = logs[:200]
+        if len(logs) > 500:
+            logs = logs[:500]
         self._write_json(MESSAGES_LOG_FILE, logs)
 
-    def get_recent_logs(self, limit: int = 60) -> List[Dict[str, Any]]:
+    def get_recent_logs(self, limit: int = 150) -> List[Dict[str, Any]]:
         logs = self._read_json(MESSAGES_LOG_FILE, [])
         return logs[:limit]
 

@@ -1,8 +1,11 @@
 """
-Google Gemini AI Tactical Intelligence Analyst for SkyWatch
-Analyzes active airspace threats on the radar and generates concise, structured
-operational bulletins for publication in Telegram channels.
-Supports Gemini 3+ models (gemini-3.5-flash, gemini-3.7-flash, gemini-3.1-flash-lite, etc.).
+Tactical AI Intelligence Analyst for SkyWatch
+Supports:
+1. Google AI Studio (Gemini 2.5/3.5+ models with AIzaSy... or AQ... keys)
+2. OpenRouter AI (sk-or-v1-...)
+3. Groq AI (gsk_...)
+4. OpenAI (sk-...)
+Generates structured, high-accuracy Ukrainian operational bulletins for Telegram channels.
 """
 import os
 import time
@@ -28,14 +31,15 @@ SYSTEM_INSTRUCTION = (
 class GeminiAnalystService:
     def __init__(self, api_key: str = GEMINI_API_KEY):
         self.api_key = api_key
-        # Models 3.0+ in order of preference
-        self.models = [
+        # Models in order of preference
+        self.gemini_models = [
+            "gemini-2.5-flash",
+            "gemini-flash-latest",
             "gemini-3.5-flash",
             "gemini-3.7-flash",
             "gemini-3.1-flash-lite",
-            "gemini-3-flash-preview",
-            "gemini-2.5-flash",
-            "gemini-flash-latest"
+            "gemini-2.5-pro",
+            "gemini-pro-latest"
         ]
 
     def _get_active_api_key(self) -> str:
@@ -68,37 +72,95 @@ class GeminiAnalystService:
         lines.append("\nСформуй чітке, структуроване зведення з емодзі для Telegram-каналу.")
         return "\n".join(lines)
 
+    async def _call_openai_compatible(self, session: aiohttp.ClientSession, endpoint: str, model: str, api_key: str, prompt_text: str) -> Optional[str]:
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        if "openrouter" in endpoint:
+            headers["HTTP-Referer"] = "https://skywatchua.onrender.com"
+            headers["X-Title"] = "SkyWatch Radar"
+
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": SYSTEM_INSTRUCTION},
+                {"role": "user", "content": prompt_text}
+            ],
+            "temperature": 0.3,
+            "max_tokens": 1024
+        }
+        async with session.post(endpoint, headers=headers, json=payload, timeout=aiohttp.ClientTimeout(total=25)) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                choices = data.get("choices", [])
+                if choices:
+                    return choices[0].get("message", {}).get("content", "").strip()
+            err_text = await resp.text()
+            logger.warning(f"OpenAI compatible {endpoint} ({model}) error HTTP {resp.status}: {err_text}")
+        return None
+
     async def generate_tactical_summary(self, targets: List[ActiveTarget], api_key_override: Optional[str] = None) -> Dict[str, Any]:
-        """Calls Gemini API (v3.5+ models) to produce an operational summary in Ukrainian."""
+        """Calls AI provider to produce an operational summary in Ukrainian."""
         active_key = (api_key_override or self._get_active_api_key()).strip()
         if not active_key:
             return {
                 "status": "error",
-                "message": "API-ключ Gemini не налаштовано. Введіть API ключ у полі в адмін-панелі."
+                "message": "API-ключ не налаштовано. Отримайте безкоштовний ключ на https://aistudio.google.com/app/apikey і вставте в поле нижче."
             }
 
         prompt_text = self._format_targets_prompt(targets)
-        
-        payload = {
-            "system_instruction": {
-                "parts": [{"text": SYSTEM_INSTRUCTION}]
-            },
-            "contents": [
-                {
-                    "role": "user",
-                    "parts": [{"text": prompt_text}]
-                }
-            ],
-            "generationConfig": {
-                "temperature": 0.3,
-                "maxOutputTokens": 1024,
-                "topP": 0.8
-            }
-        }
 
-        last_error = "Unknown error"
         async with aiohttp.ClientSession() as session:
-            for model_name in self.models:
+            # 1. OpenRouter Key (sk-or-v1-...)
+            if active_key.startswith("sk-or-"):
+                models = ["google/gemini-2.5-flash", "google/gemini-flash-1.5", "meta-llama/llama-3.3-70b-instruct"]
+                for m in models:
+                    try:
+                        res = await self._call_openai_compatible(session, "https://openrouter.ai/api/v1/chat/completions", m, active_key, prompt_text)
+                        if res:
+                            return {"status": "ok", "model": f"OpenRouter ({m})", "summary": res, "targets_count": len(targets), "timestamp": time.time()}
+                    except Exception as e:
+                        logger.warning(f"OpenRouter error: {e}")
+
+            # 2. Groq Key (gsk_...)
+            elif active_key.startswith("gsk_"):
+                try:
+                    res = await self._call_openai_compatible(session, "https://api.groq.com/openai/v1/chat/completions", "llama-3.3-70b-versatile", active_key, prompt_text)
+                    if res:
+                        return {"status": "ok", "model": "Groq LLaMA-3.3 70B", "summary": res, "targets_count": len(targets), "timestamp": time.time()}
+                except Exception as e:
+                    logger.warning(f"Groq error: {e}")
+
+            # 3. Standard OpenAI Key (sk-...)
+            elif active_key.startswith("sk-") and not active_key.startswith("sk-or-"):
+                try:
+                    res = await self._call_openai_compatible(session, "https://api.openai.com/v1/chat/completions", "gpt-4o-mini", active_key, prompt_text)
+                    if res:
+                        return {"status": "ok", "model": "OpenAI GPT-4o-mini", "summary": res, "targets_count": len(targets), "timestamp": time.time()}
+                except Exception as e:
+                    logger.warning(f"OpenAI error: {e}")
+
+            # 4. Google Gemini API (Standard Google AI Studio AIzaSy... or Cloud Token)
+            gemini_payload = {
+                "system_instruction": {
+                    "parts": [{"text": SYSTEM_INSTRUCTION}]
+                },
+                "contents": [
+                    {
+                        "role": "user",
+                        "parts": [{"text": prompt_text}]
+                    }
+                ],
+                "generationConfig": {
+                    "temperature": 0.3,
+                    "maxOutputTokens": 1024,
+                    "topP": 0.8
+                }
+            }
+
+            last_error = "Unknown error"
+            for model_name in self.gemini_models:
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={active_key}"
                 headers = {
                     "Content-Type": "application/json",
@@ -106,7 +168,7 @@ class GeminiAnalystService:
                 }
 
                 try:
-                    async with session.post(url, headers=headers, json=payload, timeout=aiohttp.ClientTimeout(total=20)) as resp:
+                    async with session.post(url, headers=headers, json=gemini_payload, timeout=aiohttp.ClientTimeout(total=20)) as resp:
                         if resp.status == 200:
                             data = await resp.json()
                             candidates = data.get("candidates", [])
@@ -116,7 +178,7 @@ class GeminiAnalystService:
                                     summary_text = content_parts[0].get("text", "").strip()
                                     return {
                                         "status": "ok",
-                                        "model": model_name,
+                                        "model": f"Google {model_name}",
                                         "summary": summary_text,
                                         "targets_count": len(targets),
                                         "timestamp": time.time()
@@ -127,9 +189,9 @@ class GeminiAnalystService:
                                 err_msg = err_data.get("error", {}).get("message", "")
                                 err_reason = (err_data.get("error", {}).get("details", [{}])[0] or {}).get("reason", "")
                                 if resp.status == 429:
-                                    last_error = "Перевищено ліміт запитів Gemini API (429 Rate Limit). Спробуйте ще раз через 30-60 секунд."
-                                elif "API_KEY_INVALID" in err_msg or "API_KEY_SERVICE_BLOCKED" in err_reason:
-                                    last_error = f"API-ключ недійсний або заблокований Google ({err_reason or err_msg}). Створіть ключ на https://aistudio.google.com/app/apikey"
+                                    last_error = "Перевищено ліміт запитів API (429 Rate Limit). Зачекайте 30 секунд і спробуйте знову."
+                                elif "API_KEY_INVALID" in err_msg or "UNAUTHENTICATED" in str(err_data):
+                                    last_error = f"API-ключ недійсний. Отримайте робочий безкоштовний ключ на https://aistudio.google.com/app/apikey (формат: AIzaSy...)"
                                 else:
                                     last_error = f"HTTP {resp.status}: {err_msg or err_data}"
                             except Exception:
@@ -142,7 +204,7 @@ class GeminiAnalystService:
 
         return {
             "status": "error",
-            "message": f"Не вдалося згенерувати звіт через Gemini API: {last_error}"
+            "message": f"Не вдалося згенерувати звіт: {last_error}"
         }
 
 # Global Gemini Analyst Singleton

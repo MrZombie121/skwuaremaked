@@ -183,7 +183,7 @@
         <div class="admin-header">
             <div class="admin-title">
                 <h1>🛡️ SKYWATCH <span class="badge-tag">ADMIN CONTROL</span></h1>
-                <span class="sub-title">ГОЛОВНА ПАНЕЛЬ КЕРУВАННЯ СЕРВЕРОМ • BUILD: 1421.2026.f8c2e9b-RELEASE (від 04.09.2026)</span>
+                <span class="sub-title">ГОЛОВНА ПАНЕЛЬ КЕРУВАННЯ СЕРВЕРОМ • BUILD: 1450.2026.d4e8c1a-NOT_FULL (від 5.09.2026)</span>
             </div>
             <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
                 <span class="cloud-badge" id="turso-status-badge">⚡ TURSO: CONNECTED</span>
@@ -325,7 +325,7 @@
                     <button class="preset-btn" onclick="setInject('БпЛА руслом на Розумівку у бік Запоріжжя')">🎯 Запоріжжя</button>
                     <button class="preset-btn" onclick="setInject('Крилата ракета в напрямку Павлоград з південного сходу!')">🚀 Ракета</button>
                     <button class="preset-btn" onclick="setInject('Пуски КАБ у напрямку Берислав')">💣 Пуски КАБ</button>
-                    <button class="preset-btn" onclick="setInject('Мінус шахед над містом, збито!')">💥 Збито / Чисто</button>
+                    <button class="preset-btn" onclick="setInject('Су-34 вихід на пускові рубежі в Чорному морі')">🛩️ Су-34 в морі</button>
                 </div>
 
                 <form id="admin-injector-form" style="display: flex; flex-direction: column; gap: 6px; margin-top: 4px;">
@@ -346,20 +346,25 @@
             <!-- 5. Gemini AI Tactical Intelligence Analyst Box -->
             <div class="admin-card" style="border-top: 3px solid #b042ff; grid-column: 1 / -1;">
                 <div class="card-title">
-                    <span>🤖 ТАКТИЧНИЙ ШТУЧНИЙ ІНТЕЛЕКТ (GEMINI AI ANALYST)</span>
-                    <span class="status-badge" style="background: rgba(176,66,255,0.15); color: #b042ff; border: 1px solid #b042ff;">GEMINI 3.5+ AI</span>
+                    <span>🤖 ТАКТИЧНИЙ ШТУЧНИЙ ІНТЕЛЕКТ (AI TACTICAL ANALYST)</span>
+                    <span class="status-badge" style="background: rgba(176,66,255,0.15); color: #b042ff; border: 1px solid #b042ff;">AI INTELLIGENCE</span>
                 </div>
 
                 <div style="font-size: 11px; color: #c3ced9; line-height: 1.5;">
-                    Нейромережевий аналіз поточної повітряної обстановки (моделі Gemini 3.5+): формування стислого оперативного зведення для публікації у Telegram-каналі на основі реальних цілей на карті.
+                    Нейромережевий аналіз поточної повітряної обстановки: автоматичне формування стислого оперативного зведення для публікації у Telegram-каналі на основі реальних цілей на карті.
                 </div>
 
                 <div>
-                    <label style="font-size: 10px; color: #6b7a8d; display: block; margin-bottom: 4px;">Google Gemini API Ключ (з aistudio.google.com або Cloud Token):</label>
+                    <label style="font-size: 10px; color: #6b7a8d; display: block; margin-bottom: 4px;">
+                        AI API Ключ (<a href="https://aistudio.google.com/app/apikey" target="_blank" class="text-cyan">Google AI Studio</a>, OpenRouter або Groq):
+                    </label>
                     <div style="display: flex; gap: 8px;">
-                        <input type="password" id="gemini-api-key-input" class="hud-input" placeholder="Введіть API ключ (AIzaSy... або AQ...)" value="AQ.Ab8RN6L3GMH9v0j1qcW-1wmoPVYsJMtVqer6gbDca3KRvQ6vNA" style="flex: 1;">
+                        <input type="text" id="gemini-api-key-input" class="hud-input" placeholder="Введіть API ключ (AIzaSy..., sk-or-..., або gsk_...)" value="AQ.Ab8RN6L3GMH9v0j1qcW-1wmoPVYsJMtVqer6gbDca3KRvQ6vNA" style="flex: 1;">
                         <button type="button" class="hud-btn highlight" onclick="saveGeminiApiKey()">💾 ЗБЕРЕГТИ КЛЮЧ</button>
                     </div>
+                    <span style="font-size: 9.5px; color: #6b7a8d; margin-top: 4px; display: block;">
+                        👉 Створіть 100% безкоштовний ключ на <a href="https://aistudio.google.com/app/apikey" target="_blank" class="text-cyan">aistudio.google.com/app/apikey</a> (формат: <code>AIzaSy...</code>) або використайте токен OpenRouter / Groq.
+                    </span>
                 </div>
 
                 <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px;">
@@ -372,7 +377,7 @@
                 </div>
 
                 <div id="ai-report-loading" class="sync-status" style="display: none; background: rgba(176,66,255,0.1); color: #b042ff; border: 1px solid #b042ff;">
-                    ⏳ Gemini AI аналізує координати, типи цілей та вектори руху...
+                    ⏳ AI аналізує координати, типи цілей та вектори руху...
                 </div>
 
                 <textarea id="ai-report-output" class="reason-input" rows="8" style="display: none; background: #06090e; font-size: 12px; line-height: 1.6; border-color: #b042ff; white-space: pre-wrap;" placeholder="Тут з'явиться готове зведення..."></textarea>

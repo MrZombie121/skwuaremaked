@@ -47,6 +47,12 @@ class TelegramThreatParser:
             re.IGNORECASE
         )
 
+        # 6. Exclusion Patterns: Threat Absence & Calm Status Summaries ("немає активності", "ракетоносії відсутні", "без запусків")
+        self.threat_absence_negation_pattern = re.compile(
+            r'\b(бойової\s+активност\w*\s+(?:наразі\s+)?нема[єе]|активност\w*\s+(?:стратегічної\s+авіації\s+|ворога\s+)?нема[єе]|ракетоносі[їі]\s+відсутн[іі]|нема[єе]\s+(?:запуск\w*|шахед\w*|ракет\w*|активності)|запуск\w*\s+шахед\w*\s+наразі\s+нема[єе]|відсутн[іі]\s+у\s+морі|не\s+зафіксовано|не\s+спостеріга[єе]ться|без\s+активност\w*|без\s+запуск\w*|загрози\s+на\s+ніч\s+на\s+середньому|на\s+середньому\s+рівні|прогноз\s+на\s+ніч|наразі\s+тихо|наразі\s+чисто|обстановка\s+спокійна|станом\s+на\s+зараз\s+(?:все\s+)?спокійно)\b',
+            re.IGNORECASE
+        )
+
         # Explicit Airborne Threat Keywords
         self.type_patterns = [
             (TargetType.BALLISTIC, re.compile(
@@ -54,7 +60,15 @@ class TelegramThreatParser:
                 re.IGNORECASE
             )),
             (TargetType.KAB, re.compile(
-                r'\b(каб\w*|фаб\w*|умпк|керован\w*\s+авіабомб\w*|пуск\w*\s+каб|скид\w*\s+каб)\b',
+                r'\b(каб\w*|фаб\w*|умпк|керован\w*\s+авіабомб\w*|пуск\w*\s+каб|скид\w*\s+каб|скид\w*)\b',
+                re.IGNORECASE
+            )),
+            (TargetType.MISSILE, re.compile(
+                r'\b(ракет\w*|х-101|х-555|х-59|х-69|калібр\w*|крилат\w*|небезпека\s+по\s+ракетах|пуск\s+ракети|пуски\s+ракет|пуск|пуски)\b',
+                re.IGNORECASE
+            )),
+            (TargetType.AIRCRAFT, re.compile(
+                r'\b(су-34\w*|су-35\w*|су-30\w*|су-24\w*|су-25\w*|су-57\w*|міг-31\w*|миг-31\w*|ту-95\w*|ту-22\w*|ту-160\w*|активність\s+та\b|активність\s+тактичної\s+авіації|тактичн\w*\s+авіаці\w*|стратегічн\w*\s+авіаці\w*|борт\w*\s+та\b|літак\w*\s+та\b|\bта\b\s+в\s+морі|\bта\b\s+над\s+морем|йде\s+на\s+пусков\w*|на\s+рубежах\s+пуск\w*|виліт\w*\s+су|виліт\w*\s+борт\w*)\b',
                 re.IGNORECASE
             )),
             (TargetType.JET_UAV, re.compile(
@@ -62,7 +76,7 @@ class TelegramThreatParser:
                 re.IGNORECASE
             )),
             (TargetType.MISSILE, re.compile(
-                r'\b(ракет\w*|х-101|х-555|х-59|х-69|калібр\w*|крилат\w*|небезпека\s+по\s+ракетах)\b',
+                r'\b(ракет\w*|х-101|х-555|х-59|х-69|калібр\w*|крилат\w*|небезпека\s+по\s+ракетах|пуск|пуски|пуски\s+ракет|пуск\s+ракети)\b',
                 re.IGNORECASE
             )),
             (TargetType.RECON, re.compile(
@@ -135,6 +149,8 @@ class TelegramThreatParser:
         if self.past_aftermath_pattern.search(text):
             return True
         if self.casual_greetings_pattern.search(text.strip()):
+            return True
+        if self.threat_absence_negation_pattern.search(text):
             return True
         return False
 

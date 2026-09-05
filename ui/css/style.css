@@ -592,6 +592,7 @@ body {
     background: #162130;
 }
 
+.target-card.type-AIRCRAFT { border-left-color: var(--color-cyan); }
 .target-card.type-JET_UAV { border-left-color: var(--color-cyan); }
 .target-card.type-MISSILE { border-left-color: var(--color-pink); }
 .target-card.type-BALLISTIC { border-left-color: var(--color-red); }
@@ -620,6 +621,7 @@ body {
     font-weight: 800;
     letter-spacing: 0.5px;
 }
+.tgt-badge.AIRCRAFT { background: rgba(0, 229, 255, 0.2); color: var(--color-cyan); border: 1px solid rgba(0, 229, 255, 0.5); }
 .tgt-badge.SHAHED { background: rgba(255, 145, 0, 0.2); color: var(--color-orange); border: 1px solid rgba(255, 145, 0, 0.4); }
 .tgt-badge.JET_UAV { background: rgba(0, 229, 255, 0.2); color: var(--color-cyan); border: 1px solid rgba(0, 229, 255, 0.4); }
 .tgt-badge.MISSILE { background: rgba(255, 0, 127, 0.2); color: var(--color-pink); border: 1px solid rgba(255, 0, 127, 0.4); }
@@ -957,7 +959,7 @@ body {
 }
 
 /* ==========================================================================
-   CUSTOM LEAFLET MARKERS & CIRCLING LOITER PULSE
+   CUSTOM LEAFLET MARKERS & ICONS
    ========================================================================== */
 .radar-threat-icon {
     position: relative;
@@ -968,36 +970,8 @@ body {
     transition: transform 0.1s linear;
 }
 
-.radar-threat-icon.circling-target .radar-pulse-ring {
-    border-color: var(--color-yellow) !important;
-    animation: pingCircling 0.8s cubic-bezier(0, 0, 0.2, 1) infinite !important;
-}
-
-@keyframes pingCircling {
-    0% { transform: scale(0.6); opacity: 1; }
-    100% { transform: scale(2.0); opacity: 0; }
-}
-
 .radar-pulse-ring {
-    position: absolute;
-    width: 56px;
-    height: 56px;
-    border-radius: 50%;
-    border: 2px solid var(--color-red);
-    animation: pingMarker 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
-    pointer-events: none;
-}
-
-.radar-pulse-ring.JET_UAV { border-color: var(--color-cyan); }
-.radar-pulse-ring.MISSILE { border-color: var(--color-pink); }
-.radar-pulse-ring.BALLISTIC { border-color: var(--color-red); }
-.radar-pulse-ring.KAB { border-color: var(--color-yellow); }
-.radar-pulse-ring.RECON { border-color: var(--color-green); }
-.radar-pulse-ring.FPV { border-color: var(--color-purple); }
-
-@keyframes pingMarker {
-    0% { transform: scale(0.6); opacity: 0.95; }
-    100% { transform: scale(1.7); opacity: 0; }
+    display: none !important;
 }
 
 .threat-img {

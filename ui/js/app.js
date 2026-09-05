@@ -224,6 +224,7 @@ function toggleRangeRings(enable) {
 function createCustomMarkerIcon(target) {
     let iconFile = '/markers/shahed.png';
     switch (target.target_type) {
+        case 'AIRCRAFT': iconFile = '/markers/aircraft.png'; break;
         case 'JET_UAV': iconFile = '/markers/rs.png'; break;
         case 'MISSILE': iconFile = '/markers/missile.png'; break;
         case 'BALLISTIC': iconFile = '/markers/ballistic.png'; break;
@@ -239,7 +240,6 @@ function createCustomMarkerIcon(target) {
 
     const html = `
         <div class="radar-threat-icon ${circlingClass}" style="transform: rotate(${rotation}deg);">
-            <div class="radar-pulse-ring ${target.target_type}"></div>
             <img src="${iconFile}" class="threat-img" alt="${target.target_type}">
         </div>
     `;
@@ -401,7 +401,8 @@ function renderTargetsOnMap(targets) {
             const trailCoords = target.trajectory.map(p => [p[0], p[1]]);
             trailCoords.push(serverLatLng);
             
-            const trailColor = target.target_type === 'JET_UAV' ? '#00e5ff' : 
+            const trailColor = target.target_type === 'AIRCRAFT' ? '#00e5ff' :
+                               target.target_type === 'JET_UAV' ? '#00e5ff' : 
                                target.target_type === 'MISSILE' ? '#ff007f' :
                                target.target_type === 'BALLISTIC' ? '#ff2a4b' :
                                target.target_type === 'KAB' ? '#ffd600' :
@@ -420,7 +421,7 @@ function renderTargetsOnMap(targets) {
             const headingDeg = (target.heading_deg !== undefined && target.heading_deg !== null) ? target.heading_deg : 315.0;
             const forwardPoint = calculateProjectedPoint(target.current_lat, target.current_lon, headingDeg, 25);
             vectorLine = L.polyline([serverLatLng, forwardPoint], {
-                color: target.target_type === 'JET_UAV' ? '#00e5ff' : '#ff2a4b',
+                color: (target.target_type === 'AIRCRAFT' || target.target_type === 'JET_UAV') ? '#00e5ff' : '#ff2a4b',
                 weight: 3,
                 opacity: 0.85,
                 dashArray: '4, 4'
@@ -519,6 +520,7 @@ function updateUI(targets) {
     const missileEl = document.getElementById('missile-count');
     const ballisticEl = document.getElementById('ballistic-count');
     const kabEl = document.getElementById('kab-count');
+    const acEl = document.getElementById('aircraft-count');
     const mobThreatBadge = document.getElementById('mobile-threat-badge');
 
     if (totalEl) totalEl.innerText = targets.length;
@@ -528,6 +530,7 @@ function updateUI(targets) {
     if (missileEl) missileEl.innerText = targets.filter(t => t.target_type === 'MISSILE').length;
     if (ballisticEl) ballisticEl.innerText = targets.filter(t => t.target_type === 'BALLISTIC').length;
     if (kabEl) kabEl.innerText = targets.filter(t => t.target_type === 'KAB').length;
+    if (acEl) acEl.innerText = targets.filter(t => t.target_type === 'AIRCRAFT').length;
 
     const listContainer = document.getElementById('targets-list');
     if (!listContainer) return;
@@ -665,7 +668,7 @@ function appendTerminalLog(logData) {
     `;
     terminal.insertBefore(entry, terminal.firstChild);
 
-    while (terminal.children.length > 60) {
+    while (terminal.children.length > 150) {
         terminal.removeChild(terminal.lastChild);
     }
 }
@@ -864,7 +867,7 @@ function connectWebSocket() {
                 const [tResp, mResp, lResp] = await Promise.all([
                     fetch('/api/targets'),
                     fetch('/api/maintenance/status'),
-                    fetch('/api/logs?limit=40')
+                    fetch('/api/logs?limit=150')
                 ]);
                 
                 if (mResp.ok && !hasBypassKey) {

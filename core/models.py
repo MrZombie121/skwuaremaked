@@ -17,6 +17,7 @@ class TargetType(str, Enum):
     RECON = "RECON"             # Розвідувальний БПЛА (Орлан, Supercam, Zala, Мерлін)
     FPV = "FPV"                 # Тактичний дрон / FPV крило
     DECOY = "DECOY"             # Фальш-ціль / приманка (Пародія, Гербера)
+    AIRCRAFT = "AIRCRAFT"       # Військовий літак ворога (Су-34, Су-35, Су-30, МіГ-31К, Ту-95, ТА)
     UNKNOWN = "UNKNOWN"         # Невизначена повітряна ціль
 
 class ThreatStatus(str, Enum):

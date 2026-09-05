@@ -61,7 +61,16 @@ class TelegramService:
 
         try:
             logger.info(f"Connecting Telethon client with StringSession (API ID: {api_id})...")
-            self.client = TelegramClient(StringSession(session_str), api_id, api_hash)
+            self.client = TelegramClient(
+                StringSession(session_str),
+                api_id,
+                api_hash,
+                device_model="SkyWatch Server (US Cloud)",
+                system_version="Linux/Production",
+                app_version="2.0.0",
+                lang_code="uk",
+                system_lang_code="uk"
+            )
             await self.client.connect()
             self.is_connected = True
 
@@ -107,8 +116,17 @@ class TelegramService:
             except Exception:
                 pass
 
-        # Always start with fresh empty StringSession to prevent "used under two different IP" errors
-        self.client = TelegramClient(StringSession(""), api_id, api_hash)
+        # Always start with fresh empty StringSession on cloud server
+        self.client = TelegramClient(
+            StringSession(""),
+            api_id,
+            api_hash,
+            device_model="SkyWatch Server (US Cloud)",
+            system_version="Linux/Production",
+            app_version="2.0.0",
+            lang_code="uk",
+            system_lang_code="uk"
+        )
         await self.client.connect()
         self.is_connected = True
 

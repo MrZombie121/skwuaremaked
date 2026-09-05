@@ -46,13 +46,33 @@ class ThreatDeduplicator:
             TargetType.KAB: "KB",
             TargetType.RECON: "RC",
             TargetType.FPV: "FP",
-            TargetType.DECOY: "DC"
+            TargetType.DECOY: "DC",
+            TargetType.AIRCRAFT: "AC"
         }.get(target_type, "TG")
         self.target_counter += 1
         return f"TGT-{prefix}-{self.target_counter}"
 
     def _default_speed(self, target_type: TargetType) -> float:
         return config.THREAT_SPEED_PROFILES.get(target_type.value, 185.0)
+
+    def _angle_to_heading(self, angle_deg: float) -> HeadingDirection:
+        dirs = [
+            (HeadingDirection.N, 337.5, 22.5),
+            (HeadingDirection.NE, 22.5, 67.5),
+            (HeadingDirection.E, 67.5, 112.5),
+            (HeadingDirection.SE, 112.5, 157.5),
+            (HeadingDirection.S, 157.5, 202.5),
+            (HeadingDirection.SW, 202.5, 247.5),
+            (HeadingDirection.W, 247.5, 292.5),
+            (HeadingDirection.NW, 292.5, 337.5)
+        ]
+        for heading, min_a, max_a in dirs:
+            if min_a > max_a:
+                if angle_deg >= min_a or angle_deg < max_a:
+                    return heading
+            elif min_a <= angle_deg < max_a:
+                return heading
+        return HeadingDirection.NW
 
     def _compute_eta(self, lat1: float, lon1: float, lat2: Optional[float], lon2: Optional[float], speed_kmh: float) -> Optional[float]:
         if lat2 is None or lon2 is None or speed_kmh <= 0:
@@ -141,13 +161,96 @@ class ThreatDeduplicator:
             if parent_key in self.msg_to_target_map:
                 target_id = self.msg_to_target_map[parent_key]
                 if target_id in self.active_targets:
-                    target = self.active_targets[target_id]
+                    parent_target = self.active_targets[target_id]
 
                     if event.is_clear_signal:
-                        target.status = ThreatStatus.DESTROYED
+                        parent_target.status = ThreatStatus.DESTROYED
                         del self.active_targets[target_id]
-                        target.raw_reports.append(f"[{event.source_channel}] (ЗБИТО/ВІДБІЙ) {event.raw_text}")
-                        return target, False
+                        parent_target.raw_reports.append(f"[{event.source_channel}] (ЗБИТО/ВІДБІЙ) {event.raw_text}")
+                        return parent_target, False
+
+                    # If parent target is an AIRCRAFT and this reply reports a missile/KAB launch ("Пуск", "Пуски", "Су-34 пуск")
+                    is_launch_from_aircraft = (
+                        parent_target.target_type == TargetType.AIRCRAFT and
+                        (event.target_type in (TargetType.MISSILE, TargetType.KAB) or
+                         any(k in event.raw_text.lower() for k in ("пуск", "скид", "ракета", "каб", "х-59", "х-69", "х-101", "випустив")))
+                    )
+
+                    if is_launch_from_aircraft:
+                        launch_type = TargetType.KAB if ("каб" in event.raw_text.lower() or "скид" in event.raw_text.lower()) else TargetType.MISSILE
+                        launch_subtype = "Х-59/69" if launch_type == TargetType.MISSILE else "КАБ-500"
+                        
+                        spawn_lat = parent_target.current_lat
+                        spawn_lon = parent_target.current_lon
+
+                        target_dest_lat = event.dest_lat
+                        target_dest_lon = event.dest_lon
+                        dest_name = event.destination
+
+                        if not target_dest_lat:
+                            ch_low = event.source_channel.lower()
+                            if any(k in ch_low for k in ("південь", "xydessa", "одес", "дюк")):
+                                dest_name = "Одеса / Чорноморськ"
+                                target_dest_lat = 46.4825
+                                target_dest_lon = 30.7233
+                            elif any(k in ch_low for k in ("ванёк", "миколаїв")):
+                                dest_name = "Очаків / Миколаїв"
+                                target_dest_lat = 46.6186
+                                target_dest_lon = 31.5492
+                            elif "херсон" in ch_low:
+                                dest_name = "Берислав"
+                                target_dest_lat = 46.8372
+                                target_dest_lon = 33.4256
+                            elif any(k in ch_low for k in ("харків", "сум")):
+                                dest_name = "Харків"
+                                target_dest_lat = 49.9935
+                                target_dest_lon = 36.2304
+                            else:
+                                p_lat, p_lon = calculate_projected_point(spawn_lat, spawn_lon, parent_target.heading_deg or 315.0, 60.0)
+                                target_dest_lat = round(p_lat, 4)
+                                target_dest_lon = round(p_lon, 4)
+                                dest_name = f"Курс {round(parent_target.heading_deg or 315.0)}°"
+
+                        exact_bearing = compute_spherical_bearing(spawn_lat, spawn_lon, target_dest_lat, target_dest_lon)
+                        speed = config.THREAT_SPEED_PROFILES.get(launch_type.value, 860.0)
+                        eta = self._compute_eta(spawn_lat, spawn_lon, target_dest_lat, target_dest_lon, speed)
+                        rem_dist = haversine_distance_km(spawn_lat, spawn_lon, target_dest_lat, target_dest_lon)
+
+                        missile_id = self._generate_target_code(launch_type)
+                        missile_target = ActiveTarget(
+                            target_id=missile_id,
+                            target_type=launch_type,
+                            target_subtype=launch_subtype,
+                            count=event.target_count or 1,
+                            status=ThreatStatus.ACTIVE,
+                            current_lat=spawn_lat,
+                            current_lon=spawn_lon,
+                            current_location_name=f"Пуск з {parent_target.target_subtype or 'борта ТА'}",
+                            destination_name=dest_name,
+                            dest_lat=target_dest_lat,
+                            dest_lon=target_dest_lon,
+                            eta_minutes=eta,
+                            distance_to_dest_km=rem_dist,
+                            heading=self._angle_to_heading(exact_bearing),
+                            heading_deg=exact_bearing,
+                            speed_kmh=speed,
+                            sources=[event.source_channel],
+                            raw_reports=[f"[{event.source_channel}] (ПУСК З {parent_target.target_id}) {event.raw_text}"],
+                            first_seen=event.timestamp,
+                            last_updated=event.timestamp,
+                            confidence_score=0.98,
+                            trajectory=[[spawn_lat, spawn_lon, event.timestamp]],
+                            hazard_cone=generate_hazard_cone_polygon(spawn_lat, spawn_lon, exact_bearing)
+                        )
+                        self.active_targets[missile_id] = missile_target
+                        if event.message_id:
+                            self.msg_to_target_map[(event.source_channel, event.message_id)] = missile_id
+
+                        parent_target.raw_reports.append(f"[{event.source_channel}] (ЗДІЙСНЕНО ПУСК) {event.raw_text}")
+                        parent_target.last_updated = event.timestamp
+                        return missile_target, True
+
+                    target = parent_target
 
                     if event.lat != 0.0 and event.lon != 0.0:
                         target.current_lat = (target.current_lat * 0.3) + (event.lat * 0.7)

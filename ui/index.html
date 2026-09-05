@@ -21,7 +21,7 @@
         <div class="logo-section">
             <div class="radar-spinner"></div>
             <div class="logo-title">
-                <h1>SKYWATCH <span class="badge-tag">C4ISR RADAR v2.0</span></h1>
+                <h1>SKYWATCH <span class="badge-tag">C4ISR RADAR v2.1.0</span></h1>
                 <span class="sub-title">UKRAINE TACTICAL AIRSPACE MONITORING SYSTEM</span>
             </div>
         </div>
@@ -54,6 +54,10 @@
             <div class="stat-box" title="Керовані авіабомби">
                 <span class="stat-label">KAB</span>
                 <span class="stat-value text-yellow" id="kab-count">0</span>
+            </div>
+            <div class="stat-box" title="Військові літаки ворога (Су-34, Су-35, ТА)">
+                <span class="stat-label">ТА (СУ-34)</span>
+                <span class="stat-value text-cyan" id="aircraft-count">0</span>
             </div>
         </div>
 
@@ -114,6 +118,7 @@
                     <button class="pill active" data-filter="ALL">ALL</button>
                     <button class="pill" data-filter="SHAHED">SHAHED</button>
                     <button class="pill" data-filter="JET_UAV">RS</button>
+                    <button class="pill" data-filter="AIRCRAFT">ТА/СУ</button>
                     <button class="pill" data-filter="MISSILE">MISSILE</button>
                     <button class="pill" data-filter="BALLISTIC">BALLISTIC</button>
                     <button class="pill" data-filter="KAB">KAB</button>
@@ -299,9 +304,9 @@
                     <div class="sys-info-header">
                         <div class="sys-title">
                             <span class="sys-name">SKYWATCH C4ISR RADAR</span>
-                            <span class="badge-tag">v2.0.0 PROFESSIONAL</span>
+                            <span class="badge-tag">v2.1.0 PROFESSIONAL</span>
                         </div>
-                        <span class="sys-build text-cyan">BUILD: 1421.2026.f8c2e9b-RELEASE (від 04.09.2026)</span>
+                        <span class="sys-build text-cyan">BUILD: 1450.2026.d4e8c1a-NOT_FULL (від 5.09.2026)</span>
                     </div>
                     <div class="sys-specs-grid">
                         <div class="spec-item"><span class="lbl">ЯДРО ОБРОБКИ:</span> <span class="val text-green">FastAPI + AsyncIO Engine</span></div>
@@ -402,6 +407,6 @@
 
     <!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="/ui/js/app.js?v=2.6.3"></script>
+    <script src="/ui/js/app.js?v=2.1.0"></script>
 </body>
 </html>
