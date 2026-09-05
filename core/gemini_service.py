@@ -2,7 +2,7 @@
 Google Gemini AI Tactical Intelligence Analyst for SkyWatch
 Analyzes active airspace threats on the radar and generates concise, structured
 operational bulletins for publication in Telegram channels.
-Supports both Google Cloud Bearer tokens and standard Google AI Studio API keys (AIza...).
+Supports Gemini 3+ models (gemini-3.5-flash, gemini-3.7-flash, gemini-3.1-flash-lite, etc.).
 """
 import os
 import time
@@ -15,7 +15,9 @@ from core.models import ActiveTarget
 
 logger = logging.getLogger("SkyWatch.Gemini")
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AQ.Ab8RN6Kec0Zhyl-Mn6GkZh2hHd9cuFMtVL3GmooclHMTcOOR9g")
+DEFAULT_GEMINI_KEY = "AQ.Ab8RN6L3GMH9v0j1qcW-1wmoPVYsJMtVqer6gbDca3KRvQ6vNA"
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", DEFAULT_GEMINI_KEY)
+
 SYSTEM_INSTRUCTION = (
     "Ты тактический аналитик SkywatchUA. На основе переданного списка целей сформируй "
     "краткую оперативную сводку для Telegram-канала: основные направления удара, "
@@ -26,8 +28,15 @@ SYSTEM_INSTRUCTION = (
 class GeminiAnalystService:
     def __init__(self, api_key: str = GEMINI_API_KEY):
         self.api_key = api_key
-        # Models to try in order of preference
-        self.models = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash", "gemini-pro"]
+        # Models 3.0+ in order of preference
+        self.models = [
+            "gemini-3.5-flash",
+            "gemini-3.7-flash",
+            "gemini-3.1-flash-lite",
+            "gemini-3-flash-preview",
+            "gemini-2.5-flash",
+            "gemini-flash-latest"
+        ]
 
     def _get_active_api_key(self) -> str:
         saved_key = db.get_setting("gemini_api_key")
@@ -40,7 +49,11 @@ class GeminiAnalystService:
             return "Станом на зараз повітряний простір України чистий. Активних повітряних загроз на радарі не зафіксовано."
 
         now_str = time.strftime("%H:%M:%S", time.localtime())
-        lines = [f"ОПЕРАТИВНА ОБСТАНОВКА НА {now_str} (Київський час):", f"Всього зафіксовано повітряних цілей: {len(targets)}\n", "СПИСОК АКТИВНИХ ЦІЛЕЙ:"]
+        lines = [
+            f"ОПЕРАТИВНА ОБСТАНОВКА НА {now_str} (Київський час):",
+            f"Всього зафіксовано повітряних цілей: {len(targets)}\n",
+            "СПИСОК АКТИВНИХ ЦІЛЕЙ:"
+        ]
 
         for idx, t in enumerate(targets, 1):
             dest = t.destination_name or f"Курс {round(t.heading_deg)}° ({t.heading.value})"
@@ -56,12 +69,12 @@ class GeminiAnalystService:
         return "\n".join(lines)
 
     async def generate_tactical_summary(self, targets: List[ActiveTarget], api_key_override: Optional[str] = None) -> Dict[str, Any]:
-        """Calls Gemini API to produce an operational summary in Ukrainian."""
+        """Calls Gemini API (v3.5+ models) to produce an operational summary in Ukrainian."""
         active_key = (api_key_override or self._get_active_api_key()).strip()
         if not active_key:
             return {
                 "status": "error",
-                "message": "API-ключ Gemini не налаштовано. Введіть API ключ у полі нижче або в налаштуваннях."
+                "message": "API-ключ Gemini не налаштовано. Введіть API ключ у полі в адмін-панелі."
             }
 
         prompt_text = self._format_targets_prompt(targets)
@@ -83,23 +96,14 @@ class GeminiAnalystService:
             }
         }
 
-        # Check if Bearer OAuth token (starts with AQ. or ya29.) vs AI Studio API key (starts with AIza...)
-        is_bearer = active_key.startswith("AQ.") or active_key.startswith("ya29.")
-        
         last_error = "Unknown error"
         async with aiohttp.ClientSession() as session:
             for model_name in self.models:
-                if is_bearer:
-                    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
-                    headers = {
-                        "Authorization": f"Bearer {active_key}",
-                        "Content-Type": "application/json"
-                    }
-                else:
-                    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={active_key}"
-                    headers = {
-                        "Content-Type": "application/json"
-                    }
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={active_key}"
+                headers = {
+                    "Content-Type": "application/json",
+                    "x-goog-api-key": active_key
+                }
 
                 try:
                     async with session.post(url, headers=headers, json=payload, timeout=aiohttp.ClientTimeout(total=20)) as resp:
@@ -118,8 +122,19 @@ class GeminiAnalystService:
                                         "timestamp": time.time()
                                     }
                         else:
-                            err_body = await resp.text()
-                            last_error = f"HTTP {resp.status}: {err_body}"
+                            try:
+                                err_data = await resp.json()
+                                err_msg = err_data.get("error", {}).get("message", "")
+                                err_reason = (err_data.get("error", {}).get("details", [{}])[0] or {}).get("reason", "")
+                                if resp.status == 429:
+                                    last_error = "Перевищено ліміт запитів Gemini API (429 Rate Limit). Спробуйте ще раз через 30-60 секунд."
+                                elif "API_KEY_INVALID" in err_msg or "API_KEY_SERVICE_BLOCKED" in err_reason:
+                                    last_error = f"API-ключ недійсний або заблокований Google ({err_reason or err_msg}). Створіть ключ на https://aistudio.google.com/app/apikey"
+                                else:
+                                    last_error = f"HTTP {resp.status}: {err_msg or err_data}"
+                            except Exception:
+                                err_body = await resp.text()
+                                last_error = f"HTTP {resp.status}: {err_body}"
                             logger.warning(f"Gemini {model_name} failed: {last_error}")
                 except Exception as e:
                     last_error = str(e)
