@@ -354,7 +354,15 @@
                     Нейромережевий аналіз поточної повітряної обстановки: формування стислого оперативного зведення для публікації у Telegram-каналі на основі реальних цілей на карті.
                 </div>
 
-                <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                <div>
+                    <label style="font-size: 10px; color: #6b7a8d; display: block; margin-bottom: 4px;">Google Gemini API Ключ (з aistudio.google.com або Cloud Token):</label>
+                    <div style="display: flex; gap: 8px;">
+                        <input type="password" id="gemini-api-key-input" class="hud-input" placeholder="Введіть API ключ (AIzaSy... або AQ...)" value="AQ.Ab8RN6Kec0Zhyl-Mn6GkZh2hHd9cuFMtVL3GmooclHMTcOOR9g" style="flex: 1;">
+                        <button type="button" class="hud-btn highlight" onclick="saveGeminiApiKey()">💾 ЗБЕРЕГТИ КЛЮЧ</button>
+                    </div>
+                </div>
+
+                <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px;">
                     <button type="button" class="hud-btn highlight" id="btn-generate-ai-report" style="background: rgba(176,66,255,0.15); border-color: #b042ff; color: #b042ff; font-weight: 800;" onclick="generateAiReport()">
                         🧠 ПІДСУМУВАТИ ЗВІТ / СФОРМУВАТИ ЗВЕДЕННЯ
                     </button>
@@ -780,6 +788,8 @@
             const copyBtn = document.getElementById('btn-copy-ai-report');
             const loading = document.getElementById('ai-report-loading');
             const output = document.getElementById('ai-report-output');
+            const keyInput = document.getElementById('gemini-api-key-input');
+            const geminiKey = keyInput ? keyInput.value.trim() : '';
 
             btn.disabled = true;
             btn.innerText = "⏳ ГЕНЕРАЦІЯ ЗВЕДЕННЯ...";
@@ -796,7 +806,7 @@
                 const resp = await fetch('/api/admin/generate-report', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ key: secretKey })
+                    body: JSON.stringify({ key: secretKey, gemini_key: geminiKey || null })
                 });
                 const data = await resp.json();
 
@@ -815,6 +825,25 @@
             } finally {
                 btn.disabled = false;
                 btn.innerText = "🧠 ПІДСУМУВАТИ ЗВІТ / СФОРМУВАТИ ЗВЕДЕННЯ";
+            }
+        }
+
+        async function saveGeminiApiKey() {
+            const keyInput = document.getElementById('gemini-api-key-input');
+            if (!keyInput) return;
+            const geminiKey = keyInput.value.trim();
+            try {
+                const resp = await fetch('/api/admin/gemini/save-key', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ key: secretKey, gemini_key: geminiKey })
+                });
+                const data = await resp.json();
+                if (data.status === 'ok') {
+                    alert("✅ Ключ Gemini API успішно збережено в базі даних!");
+                }
+            } catch (e) {
+                alert("❌ Помилка збереження ключа: " + e);
             }
         }
 

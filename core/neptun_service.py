@@ -111,12 +111,8 @@ class NeptunApiService:
 
     def _convert_neptun_threat(self, threat: Dict[str, Any]) -> Optional[ParsedThreatEvent]:
         try:
-            # Skip general area alerts without specific coordinates to avoid phantom targets
-            if threat.get("areaOnly") is True:
-                return None
-
             status = str(threat.get("status") or threat.get("state") or "active").lower()
-            if status not in ("active", "flying", "in_flight", "tracked"):
+            if status in ("resolved", "stale", "destroyed", "neutralized", "inactive", "lost", "expired"):
                 return None
 
             coords = self._extract_coordinates(threat)
@@ -296,14 +292,14 @@ class NeptunApiService:
         logger.info("Neptun API service stopped.")
 
     async def _poll_rest_loop(self):
-        """Polls Neptun REST snapshot periodically every 5 minutes (300 seconds) to refresh all live targets."""
+        """Polls Neptun REST snapshot periodically every 2 minutes (120 seconds) to refresh all live targets."""
         while self.is_enabled:
             try:
-                logger.info("Executing scheduled 5-minute threat data query to Neptun API...")
+                logger.info("Executing scheduled 2-minute threat data query to Neptun API...")
                 await self._fetch_rest_snapshot()
             except Exception as e:
-                logger.debug(f"Neptun REST 5-minute polling notice: {e}")
-            await asyncio.sleep(300.0)
+                logger.debug(f"Neptun REST 2-minute polling notice: {e}")
+            await asyncio.sleep(120.0)
 
     async def refresh_now(self):
         """Forces an immediate threat data query to Neptun API and updates the map."""

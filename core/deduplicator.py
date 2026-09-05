@@ -195,23 +195,26 @@ class ThreatDeduplicator:
             )
             return dummy, False
 
-        # 2. Spatial-Temporal Cluster Matching (for single unit correlation)
+        # 2. Spatial-Temporal Cluster Matching (only for generic Telegram text messages without unique track IDs)
         best_match_id: Optional[str] = None
         min_distance = float("inf")
 
-        for tid, target in self.active_targets.items():
-            if target.target_type != event.target_type:
-                continue
+        is_direct_api_track = bool(event.event_id and (event.event_id.startswith("nep_") or event.source_channel in ("Додаткове джерело", "NEPTUN API")))
 
-            time_delta = abs(event.timestamp - target.last_updated)
-            if time_delta > config.DEDUPLICATION_TIME_WINDOW_SEC:
-                continue
+        if not is_direct_api_track:
+            for tid, target in self.active_targets.items():
+                if target.target_type != event.target_type:
+                    continue
 
-            dist_km = haversine_distance_km(event.lat, event.lon, target.current_lat, target.current_lon)
-            if dist_km <= config.DEDUPLICATION_RADIUS_KM:
-                if dist_km < min_distance:
-                    min_distance = dist_km
-                    best_match_id = tid
+                time_delta = abs(event.timestamp - target.last_updated)
+                if time_delta > config.DEDUPLICATION_TIME_WINDOW_SEC:
+                    continue
+
+                dist_km = haversine_distance_km(event.lat, event.lon, target.current_lat, target.current_lon)
+                if dist_km <= config.DEDUPLICATION_RADIUS_KM:
+                    if dist_km < min_distance:
+                        min_distance = dist_km
+                        best_match_id = tid
 
         if best_match_id:
             target = self.active_targets[best_match_id]

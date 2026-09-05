@@ -365,6 +365,7 @@ class MaintenanceToggleRequest(BaseModel):
 
 class GeminiReportRequest(BaseModel):
     key: str
+    gemini_key: Optional[str] = None
 
 @app.post("/api/admin/generate-report")
 async def generate_admin_report(req: GeminiReportRequest):
@@ -372,9 +373,43 @@ async def generate_admin_report(req: GeminiReportRequest):
     if req.key != expected_key:
         raise HTTPException(status_code=403, detail="Доступ заборонено: невірний секретний ключ адміністратора")
     
+    if req.gemini_key and req.gemini_key.strip():
+        db.set_setting("gemini_api_key", req.gemini_key.strip())
+        try:
+            await turso_db.set_setting("gemini_api_key", req.gemini_key.strip())
+        except Exception:
+            pass
+
     targets = deduplicator.get_all_active()
-    result = await gemini_analyst.generate_tactical_summary(targets)
+    result = await gemini_analyst.generate_tactical_summary(targets, api_key_override=req.gemini_key)
     return result
+
+class GeminiSaveKeyRequest(BaseModel):
+    key: str
+    gemini_key: str
+
+@app.post("/api/admin/gemini/save-key")
+async def save_gemini_key(req: GeminiSaveKeyRequest):
+    expected_key = db.get_setting("admin_secret_key") or config.ADMIN_SECRET_KEY
+    if req.key != expected_key:
+        raise HTTPException(status_code=403, detail="Доступ заборонено")
+    
+    clean_k = req.gemini_key.strip()
+    db.set_setting("gemini_api_key", clean_k)
+    try:
+        await turso_db.set_setting("gemini_api_key", clean_k)
+    except Exception:
+        pass
+    return {"status": "ok", "saved": True}
+
+@app.get("/api/admin/gemini/get-key")
+async def get_gemini_key(key: Optional[str] = None):
+    expected_key = db.get_setting("admin_secret_key") or config.ADMIN_SECRET_KEY
+    if key != expected_key:
+        raise HTTPException(status_code=403, detail="Доступ заборонено")
+    
+    saved_k = db.get_setting("gemini_api_key") or os.getenv("GEMINI_API_KEY", "")
+    return {"gemini_key": saved_k}
 
 @app.post("/api/admin/maintenance")
 async def toggle_maintenance_mode(req: MaintenanceToggleRequest):
