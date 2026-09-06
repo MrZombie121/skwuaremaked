@@ -333,6 +333,8 @@ class TelegramService:
                         if ch_title and channel_title and (ch_title in channel_title.lower() or channel_title.lower() in ch_title):
                             is_monitored = True
                             break
+                    if not is_monitored and getattr(event, 'is_channel', False):
+                        is_monitored = True
                     if not is_monitored:
                         return
 
@@ -343,9 +345,9 @@ class TelegramService:
                 else:
                     msg_ts = time.time()
 
-                # Ignore messages published more than 10 minutes (600s) ago
-                if (time.time() - msg_ts) > 600:
-                    logger.debug(f"Skipping old message from [{channel_title}] (published {int(time.time() - msg_ts)}s ago)")
+                # Ignore messages published more than 15 minutes (900s) ago
+                if (time.time() - msg_ts) > 900 or (time.time() - msg_ts) < -300:
+                    logger.debug(f"Skipping stale message from [{channel_title}] (published {int(time.time() - msg_ts)}s ago)")
                     return
 
                 # Extract reply_to_msg_id if this message is a reply update
