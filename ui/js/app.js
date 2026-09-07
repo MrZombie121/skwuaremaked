@@ -220,19 +220,19 @@ function toggleRangeRings(enable) {
     });
 }
 
-// 2. Custom Marker Generator (Individual Unstacked Markers)
+// 2. Custom Marker Generator (Individual Unstacked Markers with Cache-Busting)
 function createCustomMarkerIcon(target) {
-    let iconFile = '/markers/shahed.png';
+    let iconFile = '/markers/shahed.png?v=2.1.0';
     switch (target.target_type) {
-        case 'AIRCRAFT': iconFile = '/markers/aircraft.png'; break;
-        case 'JET_UAV': iconFile = '/markers/rs.png'; break;
-        case 'MISSILE': iconFile = '/markers/missile.png'; break;
-        case 'BALLISTIC': iconFile = '/markers/ballistic.png'; break;
-        case 'KAB': iconFile = '/markers/kab.png'; break;
-        case 'RECON': iconFile = '/markers/recon.png'; break;
-        case 'FPV': iconFile = '/markers/fpv.png'; break;
-        case 'DECOY': iconFile = '/markers/decoy.png'; break;
-        default: iconFile = '/markers/shahed.png'; break;
+        case 'AIRCRAFT': iconFile = '/markers/aircraft.png?v=2.1.0'; break;
+        case 'JET_UAV': iconFile = '/markers/rs.png?v=2.1.0'; break;
+        case 'MISSILE': iconFile = '/markers/missile.png?v=2.1.0'; break;
+        case 'BALLISTIC': iconFile = '/markers/ballistic.png?v=2.1.0'; break;
+        case 'KAB': iconFile = '/markers/kab.png?v=2.1.0'; break;
+        case 'RECON': iconFile = '/markers/recon.png?v=2.1.0'; break;
+        case 'FPV': iconFile = '/markers/fpv.png?v=2.1.0'; break;
+        case 'DECOY': iconFile = '/markers/decoy.png?v=2.1.0'; break;
+        default: iconFile = '/markers/shahed.png?v=2.1.0'; break;
     }
 
     const rotation = (target.heading_deg !== undefined && target.heading_deg !== null) ? target.heading_deg : 0;
