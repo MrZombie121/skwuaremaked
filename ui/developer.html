@@ -282,28 +282,31 @@
                 </div>
 
                 <!-- Method 1: Direct Link to Bot with 1-Click Auth -->
-                <div style="background: #101722; padding: 14px; border-radius: 4px; border: 1px solid #1a2738; margin-bottom: 14px;">
-                    <div style="font-size: 11px; font-weight: 700; color: #00ff88; margin-bottom: 6px;">
+                <div style="background: #101722; padding: 16px; border-radius: 4px; border: 1px solid #1a2738; margin-bottom: 14px;">
+                    <div style="font-size: 11.5px; font-weight: 700; color: #00ff88; margin-bottom: 6px;">
                         🤖 СПОСІБ 1: ВХІД В 1 КЛІК ЧЕРЕЗ БОТА (@skywatchlogin_bot)
                     </div>
-                    <div style="font-size: 11px; color: #a0aec0; margin-bottom: 10px;">
-                        Натисніть кнопку нижче, перейдіть у Telegram та натисніть <b>START</b>. Сторінка оновиться автоматично:
+                    <div style="font-size: 11px; color: #a0aec0; margin-bottom: 12px; line-height: 1.5;">
+                        Натисніть кнопку, перейдіть у Telegram та натисніть <b>START</b>. Бот миттєво підтвердить акаунт і надасть посилання для входу:
                     </div>
-                    <a id="btn-bot-auth-link" href="https://t.me/skywatchlogin_bot" target="_blank" class="hud-btn highlight" style="font-weight: 800; padding: 10px 18px; font-size: 12px; display: inline-flex; align-items: center; text-decoration: none;" onclick="onBotLinkClicked()">
+                    <button type="button" class="hud-btn highlight" style="font-weight: 800; padding: 11px 20px; font-size: 12px;" id="btn-bot-auth" onclick="startBotAuth()">
                         🤖 ВІДКРИТИ БОТА @skywatchlogin_bot ТА УВІЙТИ
-                    </a>
-                    <div id="bot-auth-waiting" class="sync-status" style="display: none; background: rgba(0,229,255,0.1); color: #00e5ff; border: 1px solid #00e5ff; margin-top: 10px;">
-                        ⏳ Очікуємо натискання кнопки START у боті @skywatchlogin_bot...
+                    </button>
+                    <div id="bot-auth-waiting" class="sync-status" style="display: none; background: rgba(0,229,255,0.08); color: #00e5ff; border: 1px solid #00e5ff; margin-top: 12px; font-size: 11.5px;">
+                        <div>⏳ <b>Очікуємо натискання START у Telegram-боті...</b></div>
+                        <div id="bot-manual-cmd-box" style="margin-top: 8px; font-size: 11px; color: #c3ced9;">
+                            Або надішліть боту в чат команду: <code id="copy-start-cmd" style="color: #00ff88; background: #06090e; padding: 2px 6px; border-radius: 3px;">/start</code>
+                        </div>
                     </div>
                 </div>
 
                 <!-- Method 2: Direct PIN / Username Entry -->
-                <div style="background: #101722; padding: 14px; border-radius: 4px; border: 1px solid #1a2738;">
-                    <div style="font-size: 11px; font-weight: 700; color: #ff9100; margin-bottom: 6px;">
+                <div style="background: #101722; padding: 16px; border-radius: 4px; border: 1px solid #1a2738;">
+                    <div style="font-size: 11.5px; font-weight: 700; color: #ff9100; margin-bottom: 6px;">
                         ⚡ СПОСІБ 2: ВХІД ЗА 6-ЗНАЧНИМ PIN ІЗ БОТА АБО @USERNAME
                     </div>
-                    <div style="font-size: 11px; color: #a0aec0; margin-bottom: 8px;">
-                        Якщо ви запустили бота вручну, введіть 6-значний PIN або ваш @username:
+                    <div style="font-size: 11px; color: #a0aec0; margin-bottom: 10px;">
+                        Якщо бот надіслав вам 6-значний PIN або ви хочете увійти за @username:
                     </div>
                     <form id="form-dev-pin-verify" style="display: flex; flex-wrap: wrap; gap: 8px;">
                         <input type="text" id="input-dev-pin" class="hud-input" placeholder="6-значний PIN (напр. 492015) або @username" required style="max-width: 360px;">
@@ -533,8 +536,21 @@ getAirspaceData();</pre>
     </div>
 
     <script>
+        // Check 1-Click Login link from Telegram Bot (?token=sk-live-...&user=@...)
+        const urlParams = new URLSearchParams(window.location.search);
+        const tokenParam = urlParams.get('token');
+        const userParam = urlParams.get('user');
+
+        if (tokenParam && tokenParam.startsWith('sk-live-')) {
+            localStorage.setItem("skywatch_dev_api_key", tokenParam);
+            if (userParam) localStorage.setItem("skywatch_dev_user", userParam);
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
+
         let currentApiKey = localStorage.getItem("skywatch_dev_api_key") || null;
         let currentTgUser = localStorage.getItem("skywatch_dev_user") || null;
+        let activeSessionCode = null;
+        let botAuthPollTimer = null;
 
         function updateKeyDisplay() {
             const origin = window.location.origin || "https://ua-skywatch.pp.ua";
@@ -574,44 +590,50 @@ getAirspaceData();</pre>
             updateEmbedSnippets();
         }
 
-        function updateEmbedSnippets() {
-            const origin = window.location.origin || "https://ua-skywatch.pp.ua";
-            const theme = document.getElementById('embed-opt-theme')?.value || 'dark';
-            const hud = document.getElementById('embed-opt-hud')?.value || 'false';
-            const height = document.getElementById('embed-opt-height')?.value || '600px';
-            const key = currentApiKey || 'sk-live-ВАШ_КЛЮЧ';
+        async function startBotAuth() {
+            const btn = document.getElementById('btn-bot-auth');
+            const waitDiv = document.getElementById('bot-auth-waiting');
+            const cmdEl = document.getElementById('copy-start-cmd');
 
-            const embedUrl = `${origin}/embed/map?api_key=${key}&theme=${theme}&hud=${hud}`;
-            
-            const iframeSnippet = `<iframe src="${embedUrl}" width="100%" height="${height}" frameborder="0" style="border: 1px solid #1a2738; border-radius: 6px;" allowfullscreen></iframe>`;
-            const iframeTextEl = document.getElementById('embed-iframe-text');
-            if (iframeTextEl) iframeTextEl.innerText = iframeSnippet;
+            if (btn) btn.disabled = true;
+            if (waitDiv) waitDiv.style.display = 'block';
 
-            const sdkSnippet = `<!-- 1. Контейнер для карти -->
-<div id="skywatch-radar" style="width: 100%; height: ${height};"></div>
+            try {
+                const resp = await fetch('/api/dev/create-auth-session', { method: 'POST' });
+                const data = await resp.json();
+                
+                if (data.status === 'ok' && data.bot_url) {
+                    activeSessionCode = data.session_code;
+                    if (cmdEl) cmdEl.innerText = `/start ${data.session_code}`;
 
-<!-- 2. Скрипт віджета -->
-<script src="${origin}/embed/skywatch-widget.js" 
-        data-api-key="${key}" 
-        data-target="skywatch-radar" 
-        data-theme="${theme}" 
-        data-hud="${hud}"></script>`;
-            const sdkTextEl = document.getElementById('embed-sdk-text');
-            if (sdkTextEl) sdkTextEl.innerText = sdkSnippet;
+                    // Open Telegram Bot in new window / app
+                    window.open(data.bot_url, '_blank');
 
-            const previewIframe = document.getElementById('embed-live-iframe');
-            if (previewIframe) {
-                previewIframe.src = `/embed/map?api_key=${key}&theme=${theme}&hud=${hud}`;
+                    // Start polling for confirmation
+                    if (botAuthPollTimer) clearInterval(botAuthPollTimer);
+                    botAuthPollTimer = setInterval(async () => {
+                        try {
+                            const checkResp = await fetch(`/api/dev/check-auth-session?code=${data.session_code}`);
+                            const checkData = await checkResp.json();
+                            
+                            if (checkData.verified && checkData.api_key) {
+                                clearInterval(botAuthPollTimer);
+                                currentApiKey = checkData.api_key;
+                                currentTgUser = checkData.username || checkData.telegram_id;
+                                localStorage.setItem("skywatch_dev_api_key", currentApiKey);
+                                localStorage.setItem("skywatch_dev_user", currentTgUser);
+                                updateKeyDisplay();
+                                if (waitDiv) waitDiv.style.display = 'none';
+                                alert(`✅ Успішний вхід через Telegram! Вітаємо, @${currentTgUser}!`);
+                            }
+                        } catch (_) {}
+                    }, 1500);
+                }
+            } catch (e) {
+                alert("Помилка зв'язку з ботом: " + e);
+            } finally {
+                if (btn) btn.disabled = false;
             }
-        }
-
-        function switchEmbedTab(tab) {
-            document.querySelectorAll('.code-tabs button[onclick^="switchEmbedTab"]').forEach(b => b.classList.remove('active'));
-            event.target.classList.add('active');
-
-            document.getElementById('embed-code-iframe').style.display = tab === 'iframe' ? 'block' : 'none';
-            document.getElementById('embed-code-sdk').style.display = tab === 'sdk' ? 'block' : 'none';
-            document.getElementById('embed-code-preview').style.display = tab === 'preview' ? 'block' : 'none';
         }
 
         function logoutDev() {
@@ -695,78 +717,6 @@ getAirspaceData();</pre>
             }
         }
 
-        let activeSessionCode = null;
-        let botAuthPollTimer = null;
-
-        async function initBotLink() {
-            if (currentApiKey) return;
-            try {
-                const resp = await fetch('/api/dev/create-auth-session', { method: 'POST' });
-                const data = await resp.json();
-                if (data.status === 'ok' && data.bot_url) {
-                    activeSessionCode = data.session_code;
-                    const link = document.getElementById('btn-bot-auth-link');
-                    if (link) {
-                        link.href = data.bot_url;
-                    }
-                    startSessionPolling();
-                }
-            } catch (e) {
-                console.warn("Init bot link error:", e);
-            }
-        }
-
-        function onBotLinkClicked() {
-            const waitDiv = document.getElementById('bot-auth-waiting');
-            if (waitDiv) waitDiv.style.display = 'block';
-            startSessionPolling();
-        }
-
-        function startSessionPolling() {
-            if (!activeSessionCode || currentApiKey) return;
-            if (botAuthPollTimer) clearInterval(botAuthPollTimer);
-
-            botAuthPollTimer = setInterval(async () => {
-                try {
-                    const resp = await fetch(`/api/dev/check-auth-session?code=${activeSessionCode}`);
-                    const data = await resp.json();
-                    if (data.verified && data.api_key) {
-                        clearInterval(botAuthPollTimer);
-                        currentApiKey = data.api_key;
-                        currentTgUser = data.username || data.telegram_id;
-                        localStorage.setItem("skywatch_dev_api_key", currentApiKey);
-                        localStorage.setItem("skywatch_dev_user", currentTgUser);
-                        updateKeyDisplay();
-                        const waitDiv = document.getElementById('bot-auth-waiting');
-                        if (waitDiv) waitDiv.style.display = 'none';
-                        alert(`✅ Успішний вхід через Telegram! Вітаємо, @${currentTgUser}!`);
-                    }
-                } catch (_) {}
-            }, 1500);
-        }
-
-        // Official Telegram Login Widget Callback
-        async function onTelegramAuth(user) {
-            try {
-                const resp = await fetch('/api/dev/telegram-widget-auth', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(user)
-                });
-                const data = await resp.json();
-                if (data.status === 'ok' && data.api_key) {
-                    currentApiKey = data.api_key;
-                    currentTgUser = data.username || String(user.id);
-                    localStorage.setItem("skywatch_dev_api_key", currentApiKey);
-                    localStorage.setItem("skywatch_dev_user", currentTgUser);
-                    updateKeyDisplay();
-                    alert(`✅ Успішний вхід через Telegram! Вітаємо, @${currentTgUser}!`);
-                }
-            } catch (err) {
-                alert("Помилка авторизації віджета: " + err);
-            }
-        }
-
         // PIN / Username verify form
         document.getElementById('form-dev-pin-verify')?.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -809,7 +759,6 @@ getAirspaceData();</pre>
         // Initialize on page load
         document.addEventListener('DOMContentLoaded', () => {
             updateKeyDisplay();
-            initBotLink();
             setInterval(() => {
                 const now = new Date();
                 const kyivTime = now.toLocaleTimeString('uk-UA', { timeZone: 'Europe/Kyiv' });

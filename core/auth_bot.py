@@ -2,8 +2,7 @@
 Telegram Login Bot & HMAC Authenticator for SkyWatch Developer API
 Bot: @skywatchlogin_bot
 Token: 8911655594:AAFltUJ96Buzg1swAtneXPxQWuEnF6yNyv8
-Validates /start sk_session_... deep links, 6-digit PIN codes, and official Telegram Login Widget.
-Persists all sessions to Turso Cloud DB.
+Validates /start sk_session_... deep links, generates 1-click login links, and persists to Turso.
 """
 import asyncio
 import hashlib
@@ -64,7 +63,7 @@ class TelegramAuthBotService:
         logger.info(f"Telegram Auth Bot @{BOT_USERNAME} stopped.")
 
     async def _poll_updates(self):
-        """Long-polling loop to capture /start sk_session_... and messages from developers."""
+        """Long-polling loop to capture /start sk_session_... and send back direct 1-click login links."""
         url = f"https://api.telegram.org/bot{self.bot_token}/getUpdates"
         send_url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
 
@@ -111,14 +110,13 @@ class TelegramAuthBotService:
                                 }
                                 pin_to_user_map[pin_code] = user_session_payload
 
-                                # 3. Handle /start command parameters: /start sk_session_<hash> or /start sk_sesion_<hash>
+                                # 3. Extract session parameter from /start command
                                 session_keys_to_verify = []
                                 if text.startswith("/start"):
                                     parts = text.split()
                                     if len(parts) > 1:
                                         raw_param = parts[1].strip()
                                         session_keys_to_verify.append(raw_param)
-                                        # Also match without prefix
                                         clean_hash = raw_param.replace("sk_session_", "").replace("sk_sesion_", "").replace("auth_", "")
                                         session_keys_to_verify.append(clean_hash)
                                         session_keys_to_verify.append(f"sk_session_{clean_hash}")
@@ -138,7 +136,7 @@ class TelegramAuthBotService:
                                     except Exception as te:
                                         logger.debug(f"Turso session verify note: {te}")
 
-                                # Also save PIN code in Turso for direct entry
+                                # Save PIN in Turso
                                 try:
                                     await turso_db.verify_auth_session_by_bot(
                                         session_code=f"pin_{pin_code}",
@@ -150,20 +148,36 @@ class TelegramAuthBotService:
                                 except Exception as pe:
                                     logger.debug(f"Turso PIN save note: {pe}")
 
-                                # Send confirmation message to developer in Telegram
+                                # 4. Build Direct 1-Click Login URL
+                                host_domain = os.getenv("APP_DOMAIN", "https://ua-skywatch.pp.ua")
+                                if not host_domain.startswith("http"):
+                                    host_domain = f"https://{host_domain}"
+
+                                dev_uname = dev_user.get('username') or tg_id
+                                login_url = f"{host_domain}/developers?token={dev_user['api_key']}&user={dev_uname}"
+
                                 reply_text = (
                                     f"👋 <b>Вітаємо у SKYWATCH DEVELOPER API!</b>\n\n"
-                                    f"✅ Акаунт підтверджено: <b>@{dev_user.get('username') or tg_id}</b>\n"
-                                    f"🔢 <b>Ваш 6-значний код авторизації:</b>\n"
-                                    f"👉 <code>{pin_code}</code>\n\n"
-                                    f"🔑 <b>Ваш API-ключ:</b>\n<code>{dev_user['api_key']}</code>\n\n"
-                                    f"🌐 Поверніться на сторінку /developers — авторизацію завершено!"
+                                    f"✅ Акаунт підтверджено: <b>@{dev_uname}</b>\n\n"
+                                    f"🔑 <b>Ваш особистий API-ключ:</b>\n"
+                                    f"<code>{dev_user['api_key']}</code>\n\n"
+                                    f"🌐 <b>Посилання для входу на сайт:</b>\n"
+                                    f"{login_url}\n\n"
+                                    f"🔢 Або введіть PIN на сайті: <code>{pin_code}</code>"
                                 )
+
+                                reply_markup = {
+                                    "inline_keyboard": [
+                                        [{"text": "🌐 Увійти на сайт та відкрити API", "url": login_url}]
+                                    ]
+                                }
+
                                 try:
                                     await session.post(send_url, json={
                                         "chat_id": chat_id,
                                         "text": reply_text,
-                                        "parse_mode": "HTML"
+                                        "parse_mode": "HTML",
+                                        "reply_markup": reply_markup
                                     })
                                 except Exception as se:
                                     logger.debug(f"Error sending bot reply: {se}")
