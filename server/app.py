@@ -407,14 +407,21 @@ async def developer_auth(req: DeveloperAuthRequest):
 
 @app.post("/api/dev/create-auth-session")
 async def create_auth_session():
-    """Creates a temporary 1-click auth session for @skywatchlogin_bot."""
+    """Creates a temporary 1-click auth session for @skywatchlogin_bot stored in Turso."""
     import secrets
-    code = secrets.token_hex(8)
+    code = f"sk_session_{secrets.token_hex(8)}"
     pending_auth_sessions[code] = {
         "verified": False,
         "api_key": None,
         "timestamp": time.time()
     }
+    
+    # Store session in Turso Cloud DB
+    try:
+        await turso_db.create_auth_session(code)
+    except Exception as te:
+        logger.debug(f"Turso create session note: {te}")
+
     # Clean up old sessions (> 10 mins)
     now = time.time()
     for c in list(pending_auth_sessions.keys()):
@@ -425,16 +432,28 @@ async def create_auth_session():
         "status": "ok",
         "session_code": code,
         "bot_username": BOT_USERNAME,
-        "bot_url": f"https://t.me/{BOT_USERNAME}?start=auth_{code}"
+        "bot_url": f"https://t.me/{BOT_USERNAME}?start={code}"
     }
 
 @app.get("/api/dev/check-auth-session")
 async def check_auth_session(code: str):
     """Checks if developer has pressed Start in @skywatchlogin_bot."""
+    # 1. Check in Turso Cloud DB (100% persistent across server restarts/workers)
+    try:
+        turso_res = await turso_db.check_auth_session(code)
+        if turso_res and turso_res.get("verified"):
+            return {
+                "verified": True,
+                "api_key": turso_res["api_key"],
+                "username": turso_res["username"],
+                "telegram_id": turso_res["telegram_id"]
+            }
+    except Exception as te:
+        logger.debug(f"Turso check auth note: {te}")
+
+    # 2. Check in memory
     sess = pending_auth_sessions.get(code)
-    if not sess:
-        return {"verified": False, "expired": True}
-    if sess.get("verified"):
+    if sess and sess.get("verified"):
         return {
             "verified": True,
             "api_key": sess["api_key"],
@@ -474,7 +493,20 @@ async def verify_dev_pin(req: PinVerifyRequest):
     if not val:
         raise HTTPException(status_code=400, detail="Введіть PIN або @username")
 
-    # 1. Check if 6-digit PIN was issued by bot
+    # 1. Check in Turso Cloud DB by 6-digit PIN
+    try:
+        turso_pin = await turso_db.verify_by_pin_code(val)
+        if turso_pin and turso_pin.get("api_key"):
+            return {
+                "status": "ok",
+                "api_key": turso_pin["api_key"],
+                "username": turso_pin["username"],
+                "telegram_id": turso_pin["telegram_id"]
+            }
+    except Exception as te:
+        logger.debug(f"Turso pin lookup note: {te}")
+
+    # 2. Check in memory by PIN
     if val in pin_to_user_map:
         data = pin_to_user_map[val]
         return {
@@ -484,7 +516,7 @@ async def verify_dev_pin(req: PinVerifyRequest):
             "telegram_id": data["telegram_id"]
         }
 
-    # 2. Register/get from Turso by username/ID
+    # 3. Register/get from Turso by username/ID
     clean_val = val.replace("@", "")
     user = await turso_db.register_or_get_api_user(
         telegram_id=clean_val,

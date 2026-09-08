@@ -2,7 +2,8 @@
 Telegram Login Bot & HMAC Authenticator for SkyWatch Developer API
 Bot: @skywatchlogin_bot
 Token: 8911655594:AAFltUJ96Buzg1swAtneXPxQWuEnF6yNyv8
-Validates official Telegram Login Widget, processes /start deep links, and 6-digit PIN codes.
+Validates /start sk_session_... deep links, 6-digit PIN codes, and official Telegram Login Widget.
+Persists all sessions to Turso Cloud DB.
 """
 import asyncio
 import hashlib
@@ -21,7 +22,6 @@ logger = logging.getLogger("SkyWatch.AuthBot")
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8911655594:AAFltUJ96Buzg1swAtneXPxQWuEnF6yNyv8")
 BOT_USERNAME = os.getenv("TELEGRAM_BOT_USERNAME", "skywatchlogin_bot")
 
-# In-memory auth session states
 pending_auth_sessions: Dict[str, Dict[str, Any]] = {}
 pin_to_user_map: Dict[str, Dict[str, Any]] = {}
 
@@ -64,7 +64,7 @@ class TelegramAuthBotService:
         logger.info(f"Telegram Auth Bot @{BOT_USERNAME} stopped.")
 
     async def _poll_updates(self):
-        """Long-polling loop to capture /start auth_... and messages from developers."""
+        """Long-polling loop to capture /start sk_session_... and messages from developers."""
         url = f"https://api.telegram.org/bot{self.bot_token}/getUpdates"
         send_url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
 
@@ -99,7 +99,7 @@ class TelegramAuthBotService:
                                     username=username or f"user_{tg_id}"
                                 )
 
-                                # 2. Generate 6-digit quick PIN
+                                # 2. Generate 6-digit PIN code
                                 pin_code = str(random.randint(100000, 999999))
                                 user_session_payload = {
                                     "verified": True,
@@ -111,23 +111,53 @@ class TelegramAuthBotService:
                                 }
                                 pin_to_user_map[pin_code] = user_session_payload
 
-                                # 3. Check if deep link session_code is present
+                                # 3. Handle /start command parameters: /start sk_session_<hash> or /start sk_sesion_<hash>
+                                session_keys_to_verify = []
                                 if text.startswith("/start"):
                                     parts = text.split()
-                                    if len(parts) > 1 and parts[1].startswith("auth_"):
-                                        session_code = parts[1].replace("auth_", "")
-                                        pending_auth_sessions[session_code] = user_session_payload
-                                    elif len(parts) > 1 and parts[1] in pending_auth_sessions:
-                                        pending_auth_sessions[parts[1]] = user_session_payload
+                                    if len(parts) > 1:
+                                        raw_param = parts[1].strip()
+                                        session_keys_to_verify.append(raw_param)
+                                        # Also match without prefix
+                                        clean_hash = raw_param.replace("sk_session_", "").replace("sk_sesion_", "").replace("auth_", "")
+                                        session_keys_to_verify.append(clean_hash)
+                                        session_keys_to_verify.append(f"sk_session_{clean_hash}")
+                                        session_keys_to_verify.append(f"sk_sesion_{clean_hash}")
 
-                                # Send confirmation message to user in Telegram
+                                # Save verification in Turso for all matched session keys
+                                for s_key in session_keys_to_verify:
+                                    pending_auth_sessions[s_key] = user_session_payload
+                                    try:
+                                        await turso_db.verify_auth_session_by_bot(
+                                            session_code=s_key,
+                                            pin_code=pin_code,
+                                            telegram_id=tg_id,
+                                            username=dev_user.get("username") or username or tg_id,
+                                            api_key=dev_user["api_key"]
+                                        )
+                                    except Exception as te:
+                                        logger.debug(f"Turso session verify note: {te}")
+
+                                # Also save PIN code in Turso for direct entry
+                                try:
+                                    await turso_db.verify_auth_session_by_bot(
+                                        session_code=f"pin_{pin_code}",
+                                        pin_code=pin_code,
+                                        telegram_id=tg_id,
+                                        username=dev_user.get("username") or username or tg_id,
+                                        api_key=dev_user["api_key"]
+                                    )
+                                except Exception as pe:
+                                    logger.debug(f"Turso PIN save note: {pe}")
+
+                                # Send confirmation message to developer in Telegram
                                 reply_text = (
                                     f"👋 <b>Вітаємо у SKYWATCH DEVELOPER API!</b>\n\n"
                                     f"✅ Акаунт підтверджено: <b>@{dev_user.get('username') or tg_id}</b>\n"
-                                    f"🔑 <b>Ваш API-ключ:</b>\n<code>{dev_user['api_key']}</code>\n\n"
-                                    f"🔢 <b>Або введіть цей 6-значний PIN на сайті:</b>\n"
+                                    f"🔢 <b>Ваш 6-значний код авторизації:</b>\n"
                                     f"👉 <code>{pin_code}</code>\n\n"
-                                    f"🌐 Поверніться на сторінку /developers — вхід виконано!"
+                                    f"🔑 <b>Ваш API-ключ:</b>\n<code>{dev_user['api_key']}</code>\n\n"
+                                    f"🌐 Поверніться на сторінку /developers — авторизацію завершено!"
                                 )
                                 try:
                                     await session.post(send_url, json={
@@ -142,7 +172,7 @@ class TelegramAuthBotService:
                 break
             except Exception as e:
                 logger.debug(f"Auth bot polling note: {e}")
-                await asyncio.sleep(3.0)
+                await asyncio.sleep(2.5)
 
 # Global Auth Bot Singleton
 auth_bot = TelegramAuthBotService()
