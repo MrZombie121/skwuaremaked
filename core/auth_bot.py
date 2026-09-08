@@ -2,13 +2,14 @@
 Telegram Login Bot & HMAC Authenticator for SkyWatch Developer API
 Bot: @skywatchlogin_bot
 Token: 8911655594:AAFltUJ96Buzg1swAtneXPxQWuEnF6yNyv8
-Validates official Telegram Login Widget and processes /start deep links for instant 1-click login.
+Validates official Telegram Login Widget, processes /start deep links, and 6-digit PIN codes.
 """
 import asyncio
 import hashlib
 import hmac
 import logging
 import os
+import random
 import time
 import aiohttp
 from typing import Dict, Any, Optional
@@ -20,8 +21,9 @@ logger = logging.getLogger("SkyWatch.AuthBot")
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8911655594:AAFltUJ96Buzg1swAtneXPxQWuEnF6yNyv8")
 BOT_USERNAME = os.getenv("TELEGRAM_BOT_USERNAME", "skywatchlogin_bot")
 
-# In-memory auth session states: code -> { verified: bool, user_data: dict, timestamp: float }
+# In-memory auth session states
 pending_auth_sessions: Dict[str, Dict[str, Any]] = {}
+pin_to_user_map: Dict[str, Dict[str, Any]] = {}
 
 def verify_telegram_widget_auth(auth_data: Dict[str, Any], bot_token: str = BOT_TOKEN) -> bool:
     """Verifies cryptographic HMAC-SHA256 signature from official Telegram Login Widget."""
@@ -62,15 +64,15 @@ class TelegramAuthBotService:
         logger.info(f"Telegram Auth Bot @{BOT_USERNAME} stopped.")
 
     async def _poll_updates(self):
-        """Long-polling loop to capture /start auth_... from developers."""
+        """Long-polling loop to capture /start auth_... and messages from developers."""
         url = f"https://api.telegram.org/bot{self.bot_token}/getUpdates"
         send_url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
 
         while self.is_running:
             try:
                 async with aiohttp.ClientSession() as session:
-                    params = {"offset": self._offset, "timeout": 20}
-                    async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=25)) as resp:
+                    params = {"offset": self._offset, "timeout": 15}
+                    async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=20)) as resp:
                         if resp.status == 200:
                             data = await resp.json()
                             updates = data.get("result", [])
@@ -81,54 +83,66 @@ class TelegramAuthBotService:
                                 from_user = msg.get("from") or {}
                                 chat_id = msg.get("chat", {}).get("id")
 
+                                if not from_user or not chat_id:
+                                    continue
+
+                                tg_id = str(from_user.get("id"))
+                                first_name = from_user.get("first_name", "")
+                                last_name = from_user.get("last_name", "")
+                                username = from_user.get("username", "")
+
+                                # 1. Register/Get Developer in Turso Cloud DB
+                                dev_user = await turso_db.register_or_get_api_user(
+                                    telegram_id=tg_id,
+                                    first_name=first_name,
+                                    last_name=last_name,
+                                    username=username or f"user_{tg_id}"
+                                )
+
+                                # 2. Generate 6-digit quick PIN
+                                pin_code = str(random.randint(100000, 999999))
+                                user_session_payload = {
+                                    "verified": True,
+                                    "api_key": dev_user["api_key"],
+                                    "username": dev_user.get("username") or username or tg_id,
+                                    "telegram_id": tg_id,
+                                    "first_name": first_name,
+                                    "timestamp": time.time()
+                                }
+                                pin_to_user_map[pin_code] = user_session_payload
+
+                                # 3. Check if deep link session_code is present
                                 if text.startswith("/start"):
                                     parts = text.split()
-                                    session_code = parts[1].replace("auth_", "") if len(parts) > 1 and parts[1].startswith("auth_") else None
-                                    
-                                    tg_id = str(from_user.get("id"))
-                                    first_name = from_user.get("first_name", "")
-                                    last_name = from_user.get("last_name", "")
-                                    username = from_user.get("username", "")
+                                    if len(parts) > 1 and parts[1].startswith("auth_"):
+                                        session_code = parts[1].replace("auth_", "")
+                                        pending_auth_sessions[session_code] = user_session_payload
+                                    elif len(parts) > 1 and parts[1] in pending_auth_sessions:
+                                        pending_auth_sessions[parts[1]] = user_session_payload
 
-                                    # Register developer in Turso Cloud Database
-                                    dev_user = await turso_db.register_or_get_api_user(
-                                        telegram_id=tg_id,
-                                        first_name=first_name,
-                                        last_name=last_name,
-                                        username=username or f"user_{tg_id}"
-                                    )
-
-                                    if session_code and session_code in pending_auth_sessions:
-                                        pending_auth_sessions[session_code] = {
-                                            "verified": True,
-                                            "api_key": dev_user["api_key"],
-                                            "username": dev_user.get("username") or username or tg_id,
-                                            "telegram_id": tg_id,
-                                            "first_name": first_name,
-                                            "timestamp": time.time()
-                                        }
-
-                                    # Send confirmation message to user
-                                    reply_text = (
-                                        f"👋 <b>Вітаємо в SKYWATCH DEVELOPER API!</b>\n\n"
-                                        f"✅ Ваш акаунт успішно підтверджено!\n"
-                                        f"🔑 <b>Ваш персональний API-ключ:</b>\n<code>{dev_user['api_key']}</code>\n\n"
-                                        f"Поверніться у браузер — авторизацію завершено, і ключ вже завантажено на сторінку!"
-                                    )
-                                    try:
-                                        await session.post(send_url, json={
-                                            "chat_id": chat_id,
-                                            "text": reply_text,
-                                            "parse_mode": "HTML"
-                                        })
-                                    except Exception as se:
-                                        logger.debug(f"Error sending bot reply: {se}")
+                                # Send confirmation message to user in Telegram
+                                reply_text = (
+                                    f"👋 <b>Вітаємо у SKYWATCH DEVELOPER API!</b>\n\n"
+                                    f"✅ Акаунт підтверджено: <b>@{dev_user.get('username') or tg_id}</b>\n"
+                                    f"🔑 <b>Ваш API-ключ:</b>\n<code>{dev_user['api_key']}</code>\n\n"
+                                    f"🔢 <b>Або введіть цей 6-значний PIN на сайті:</b>\n"
+                                    f"👉 <code>{pin_code}</code>\n\n"
+                                    f"🌐 Поверніться на сторінку /developers — вхід виконано!"
+                                )
+                                try:
+                                    await session.post(send_url, json={
+                                        "chat_id": chat_id,
+                                        "text": reply_text,
+                                        "parse_mode": "HTML"
+                                    })
+                                except Exception as se:
+                                    logger.debug(f"Error sending bot reply: {se}")
 
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.debug(f"Auth bot polling note: {e}")
-                await asyncio.sleep(4.0)
+                await asyncio.sleep(3.0)
 
 # Global Auth Bot Singleton
 auth_bot = TelegramAuthBotService()

@@ -281,30 +281,33 @@
                     Оберіть зручний спосіб входу. Ваш акаунт буде зареєстровано в хмарній базі Turso, після чого ви отримаєте персональний ключ <code>sk-live-...</code>:
                 </div>
 
-                <!-- Method 1: 1-Click Bot Authentication -->
+                <!-- Method 1: Direct Link to Bot with 1-Click Auth -->
                 <div style="background: #101722; padding: 14px; border-radius: 4px; border: 1px solid #1a2738; margin-bottom: 14px;">
                     <div style="font-size: 11px; font-weight: 700; color: #00ff88; margin-bottom: 6px;">
-                        🤖 СПОСІБ 1: ВХІД В 1 КЛІК ЧЕРЕЗ ОФІЦІЙНОГО БОТА (@skywatchlogin_bot)
+                        🤖 СПОСІБ 1: ВХІД В 1 КЛІК ЧЕРЕЗ БОТА (@skywatchlogin_bot)
                     </div>
                     <div style="font-size: 11px; color: #a0aec0; margin-bottom: 10px;">
-                        Натисніть кнопку, перейдіть у Telegram та натисніть <b>START</b>. Ключ з'явиться тут автоматично:
+                        Натисніть кнопку нижче, перейдіть у Telegram та натисніть <b>START</b>. Сторінка оновиться автоматично:
                     </div>
-                    <button type="button" class="hud-btn highlight" style="font-weight: 800; padding: 10px 18px; font-size: 12px;" id="btn-bot-auth" onclick="startBotAuth()">
+                    <a id="btn-bot-auth-link" href="https://t.me/skywatchlogin_bot" target="_blank" class="hud-btn highlight" style="font-weight: 800; padding: 10px 18px; font-size: 12px; display: inline-flex; align-items: center; text-decoration: none;" onclick="onBotLinkClicked()">
                         🤖 ВІДКРИТИ БОТА @skywatchlogin_bot ТА УВІЙТИ
-                    </button>
+                    </a>
                     <div id="bot-auth-waiting" class="sync-status" style="display: none; background: rgba(0,229,255,0.1); color: #00e5ff; border: 1px solid #00e5ff; margin-top: 10px;">
-                        ⏳ Очікуємо натискання кнопки START у Telegram-боті... (після натискання екран оновиться автоматично)
+                        ⏳ Очікуємо натискання кнопки START у боті @skywatchlogin_bot...
                     </div>
                 </div>
 
-                <!-- Method 2: Direct Username / ID -->
+                <!-- Method 2: Direct PIN / Username Entry -->
                 <div style="background: #101722; padding: 14px; border-radius: 4px; border: 1px solid #1a2738;">
                     <div style="font-size: 11px; font-weight: 700; color: #ff9100; margin-bottom: 6px;">
-                        ⚡ СПОСІБ 2: ШВИДКА РЕЄСТРАЦІЯ ЗА @USERNAME АБО TELEGRAM ID
+                        ⚡ СПОСІБ 2: ВХІД ЗА 6-ЗНАЧНИМ PIN ІЗ БОТА АБО @USERNAME
                     </div>
-                    <form id="form-dev-tg-register" style="display: flex; flex-wrap: wrap; gap: 8px;">
-                        <input type="text" id="input-dev-tg" class="hud-input" placeholder="Введіть ваш @username або Telegram ID" required style="max-width: 360px;">
-                        <button type="submit" class="hud-btn highlight" style="font-weight: 800;" id="btn-dev-register">🚀 ОТРИМАТИ КЛЮЧ SK-LIVE</button>
+                    <div style="font-size: 11px; color: #a0aec0; margin-bottom: 8px;">
+                        Якщо ви запустили бота вручну, введіть 6-значний PIN або ваш @username:
+                    </div>
+                    <form id="form-dev-pin-verify" style="display: flex; flex-wrap: wrap; gap: 8px;">
+                        <input type="text" id="input-dev-pin" class="hud-input" placeholder="6-значний PIN (напр. 492015) або @username" required style="max-width: 360px;">
+                        <button type="submit" class="hud-btn highlight" style="font-weight: 800;" id="btn-dev-pin-submit">🚀 ПІДТВЕРДИТИ ВХІД</button>
                     </form>
                 </div>
             </div>
@@ -692,47 +695,54 @@ getAirspaceData();</pre>
             }
         }
 
+        let activeSessionCode = null;
         let botAuthPollTimer = null;
 
-        async function startBotAuth() {
-            const btn = document.getElementById('btn-bot-auth');
-            const waitDiv = document.getElementById('bot-auth-waiting');
-
-            if (btn) btn.disabled = true;
-            if (waitDiv) waitDiv.style.display = 'block';
-
+        async function initBotLink() {
+            if (currentApiKey) return;
             try {
                 const resp = await fetch('/api/dev/create-auth-session', { method: 'POST' });
                 const data = await resp.json();
-                
                 if (data.status === 'ok' && data.bot_url) {
-                    // Open Telegram Bot in new window / app
-                    window.open(data.bot_url, '_blank');
-
-                    // Poll for verification
-                    if (botAuthPollTimer) clearInterval(botAuthPollTimer);
-                    botAuthPollTimer = setInterval(async () => {
-                        try {
-                            const checkResp = await fetch(`/api/dev/check-auth-session?code=${data.session_code}`);
-                            const checkData = await checkResp.json();
-                            
-                            if (checkData.verified && checkData.api_key) {
-                                clearInterval(botAuthPollTimer);
-                                currentApiKey = checkData.api_key;
-                                currentTgUser = checkData.username || checkData.telegram_id;
-                                localStorage.setItem("skywatch_dev_api_key", currentApiKey);
-                                localStorage.setItem("skywatch_dev_user", currentTgUser);
-                                updateKeyDisplay();
-                                if (waitDiv) waitDiv.style.display = 'none';
-                                alert(`✅ Успішний вхід через Telegram! Вітаємо, @${currentTgUser}!`);
-                            }
-                        } catch (_) {}
-                    }, 1500);
+                    activeSessionCode = data.session_code;
+                    const link = document.getElementById('btn-bot-auth-link');
+                    if (link) {
+                        link.href = data.bot_url;
+                    }
+                    startSessionPolling();
                 }
             } catch (e) {
-                alert("Помилка зв'язку з ботом: " + e);
-                if (btn) btn.disabled = false;
+                console.warn("Init bot link error:", e);
             }
+        }
+
+        function onBotLinkClicked() {
+            const waitDiv = document.getElementById('bot-auth-waiting');
+            if (waitDiv) waitDiv.style.display = 'block';
+            startSessionPolling();
+        }
+
+        function startSessionPolling() {
+            if (!activeSessionCode || currentApiKey) return;
+            if (botAuthPollTimer) clearInterval(botAuthPollTimer);
+
+            botAuthPollTimer = setInterval(async () => {
+                try {
+                    const resp = await fetch(`/api/dev/check-auth-session?code=${activeSessionCode}`);
+                    const data = await resp.json();
+                    if (data.verified && data.api_key) {
+                        clearInterval(botAuthPollTimer);
+                        currentApiKey = data.api_key;
+                        currentTgUser = data.username || data.telegram_id;
+                        localStorage.setItem("skywatch_dev_api_key", currentApiKey);
+                        localStorage.setItem("skywatch_dev_user", currentTgUser);
+                        updateKeyDisplay();
+                        const waitDiv = document.getElementById('bot-auth-waiting');
+                        if (waitDiv) waitDiv.style.display = 'none';
+                        alert(`✅ Успішний вхід через Telegram! Вітаємо, @${currentTgUser}!`);
+                    }
+                } catch (_) {}
+            }, 1500);
         }
 
         // Official Telegram Login Widget Callback
@@ -757,43 +767,41 @@ getAirspaceData();</pre>
             }
         }
 
-        // Registration form for new devs
-        document.getElementById('form-dev-tg-register')?.addEventListener('submit', async (e) => {
+        // PIN / Username verify form
+        document.getElementById('form-dev-pin-verify')?.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const inputVal = document.getElementById('input-dev-tg').value.trim();
+            const inputVal = document.getElementById('input-dev-pin').value.trim();
             if (!inputVal) return;
 
-            const btn = document.getElementById('btn-dev-register');
+            const btn = document.getElementById('btn-dev-pin-submit');
             if (btn) {
                 btn.disabled = true;
-                btn.innerText = "⏳ Створення в Turso...";
+                btn.innerText = "⏳ Перевірка...";
             }
 
             try {
-                const cleanTg = inputVal.replace('@', '');
-                const resp = await fetch('/api/dev/auth', {
+                const resp = await fetch('/api/dev/verify-pin', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        telegram_id: cleanTg,
-                        username: cleanTg
-                    })
+                    body: JSON.stringify({ pin_or_username: inputVal })
                 });
                 const data = await resp.json();
                 if (data.status === 'ok' && data.api_key) {
                     currentApiKey = data.api_key;
-                    currentTgUser = data.username || cleanTg;
+                    currentTgUser = data.username || inputVal.replace('@', '');
                     localStorage.setItem("skywatch_dev_api_key", currentApiKey);
                     localStorage.setItem("skywatch_dev_user", currentTgUser);
                     updateKeyDisplay();
-                    alert("✅ Вітаємо! Ваш акаунт зареєстровано в Turso та згенеровано ключ sk-live-...");
+                    alert(`✅ Вхід підтверджено! Вітаємо, @${currentTgUser}!`);
+                } else {
+                    alert("❌ Невірний PIN або користувача не знайдено.");
                 }
             } catch (err) {
-                alert("Помилка реєстрації: " + err);
+                alert("Помилка підтвердження: " + err);
             } finally {
                 if (btn) {
                     btn.disabled = false;
-                    btn.innerText = "🚀 УВІЙТИ ТА ОТРИМАТИ API КЛЮЧ";
+                    btn.innerText = "🚀 ПІДТВЕРДИТИ ВХІД";
                 }
             }
         });
@@ -801,6 +809,7 @@ getAirspaceData();</pre>
         // Initialize on page load
         document.addEventListener('DOMContentLoaded', () => {
             updateKeyDisplay();
+            initBotLink();
             setInterval(() => {
                 const now = new Date();
                 const kyivTime = now.toLocaleTimeString('uk-UA', { timeZone: 'Europe/Kyiv' });

@@ -33,7 +33,7 @@ from core.simulator import TacticalSimulator
 from core.neptun_service import NeptunApiService
 from core.turso_db import turso_db
 from core.gemini_service import gemini_analyst
-from core.auth_bot import auth_bot, verify_telegram_widget_auth, pending_auth_sessions, BOT_USERNAME
+from core.auth_bot import auth_bot, verify_telegram_widget_auth, pending_auth_sessions, pin_to_user_map, BOT_USERNAME
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("SkyWatch.Server")
@@ -456,6 +456,39 @@ async def telegram_widget_auth(request: Request):
         last_name=data.get("last_name", ""),
         username=data.get("username", f"user_{data['id']}"),
         photo_url=data.get("photo_url", "")
+    )
+    return {
+        "status": "ok",
+        "api_key": user["api_key"],
+        "username": user.get("username"),
+        "telegram_id": user["telegram_id"]
+    }
+
+class PinVerifyRequest(BaseModel):
+    pin_or_username: str
+
+@app.post("/api/dev/verify-pin")
+async def verify_dev_pin(req: PinVerifyRequest):
+    """Verifies 6-digit PIN from @skywatchlogin_bot or registers developer by username."""
+    val = req.pin_or_username.strip()
+    if not val:
+        raise HTTPException(status_code=400, detail="Введіть PIN або @username")
+
+    # 1. Check if 6-digit PIN was issued by bot
+    if val in pin_to_user_map:
+        data = pin_to_user_map[val]
+        return {
+            "status": "ok",
+            "api_key": data["api_key"],
+            "username": data["username"],
+            "telegram_id": data["telegram_id"]
+        }
+
+    # 2. Register/get from Turso by username/ID
+    clean_val = val.replace("@", "")
+    user = await turso_db.register_or_get_api_user(
+        telegram_id=clean_val,
+        username=clean_val
     )
     return {
         "status": "ok",
