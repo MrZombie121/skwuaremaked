@@ -1,18 +1,23 @@
 """
-TURSO Cloud Database Connector & Maintenance Manager for SkyWatch
-Uses Turso HTTP API (libSQL pipeline) to synchronize maintenance status, end time, and messages.
+TURSO Cloud Database Connector & Developer API Auth Engine for SkyWatch
+Stores maintenance config, settings, and developer accounts (with sk-live-... keys).
 Persists across all deployments, containers, and server restarts.
 """
 import os
 import time
 import logging
+import secrets
 import aiohttp
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 import config
 from core.db import db
 
 logger = logging.getLogger("SkyWatch.Turso")
+
+def generate_sk_live_key() -> str:
+    """Generates a secure OpenAI-style API key: sk-live-(24 hex chars)."""
+    return f"sk-live-{secrets.token_hex(12)}"
 
 class TursoDatabaseClient:
     def __init__(self):
@@ -64,7 +69,7 @@ class TursoDatabaseClient:
 
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.post(self.endpoint, headers=self._headers, json=payload, timeout=aiohttp.ClientTimeout(total=6)) as resp:
+                async with session.post(self.endpoint, headers=self._headers, json=payload, timeout=aiohttp.ClientTimeout(total=8)) as resp:
                     if resp.status == 200:
                         data = await resp.json()
                         results = data.get("results", [])
@@ -78,7 +83,8 @@ class TursoDatabaseClient:
         return None
 
     async def init_schema(self):
-        """Creates maintenance_config and system_settings tables on Turso cloud DB if not exists."""
+        """Creates maintenance_config, system_settings, and api_users tables on Turso cloud DB."""
+        # 1. Maintenance Config Table
         sql_maint = """
         CREATE TABLE IF NOT EXISTS maintenance_config (
             id TEXT PRIMARY KEY,
@@ -90,6 +96,7 @@ class TursoDatabaseClient:
         """
         await self.execute_query(sql_maint)
 
+        # 2. System Settings Table
         sql_settings = """
         CREATE TABLE IF NOT EXISTS system_settings (
             key TEXT PRIMARY KEY,
@@ -98,15 +105,36 @@ class TursoDatabaseClient:
         );
         """
         await self.execute_query(sql_settings)
+
+        # 3. Developer Accounts & API Keys Table
+        sql_users = """
+        CREATE TABLE IF NOT EXISTS api_users (
+            telegram_id TEXT PRIMARY KEY,
+            first_name TEXT,
+            last_name TEXT,
+            username TEXT,
+            photo_url TEXT,
+            api_key TEXT UNIQUE,
+            created_at INTEGER,
+            last_used_at INTEGER,
+            requests_count INTEGER DEFAULT 0,
+            is_active INTEGER DEFAULT 1
+        );
+        """
+        await self.execute_query(sql_users)
+
+        sql_idx = "CREATE INDEX IF NOT EXISTS idx_api_users_key ON api_users(api_key);"
+        await self.execute_query(sql_idx)
         
-        # Insert default row if not exists
+        # Insert default maintenance row if not exists
         check_sql = "SELECT id FROM maintenance_config WHERE id = 'main';"
         res = await self.execute_query(check_sql)
         if res and not res.get("rows"):
             insert_sql = "INSERT INTO maintenance_config (id, is_enabled, reason, end_timestamp, updated_at) VALUES ('main', 0, 'Тривають планові технічні роботи.', 0, ?);"
             await self.execute_query(insert_sql, [int(time.time())])
-            logger.info("Initialized Turso maintenance table schema.")
+            logger.info("Initialized Turso schema (maintenance, settings, api_users).")
 
+    # --- System Settings API ---
     async def get_setting(self, key: str, default: Optional[str] = None) -> Optional[str]:
         """Gets a persistent setting from Turso cloud database."""
         sql = "SELECT value FROM system_settings WHERE key = ?;"
@@ -127,6 +155,7 @@ class TursoDatabaseClient:
         """
         await self.execute_query(sql, [key, value, now])
 
+    # --- Maintenance State API ---
     async def get_maintenance_state(self) -> Dict[str, Any]:
         """Fetches live maintenance state from Turso (with JSON local fallback)."""
         sql = "SELECT is_enabled, reason, end_timestamp, updated_at FROM maintenance_config WHERE id = 'main';"
@@ -134,12 +163,10 @@ class TursoDatabaseClient:
         
         if res and res.get("rows"):
             row = res["rows"][0]
-            # row: [is_enabled, reason, end_timestamp, updated_at]
             is_enabled = bool(int(row[0].get("value", 0)))
             reason = str(row[1].get("value", ""))
             end_ts = int(row[2].get("value", 0))
             
-            # Sync to local db
             db.set_setting("maintenance_mode", "true" if is_enabled else "false")
             db.set_setting("maintenance_reason", reason)
             db.set_setting("maintenance_end_ts", str(end_ts))
@@ -150,7 +177,6 @@ class TursoDatabaseClient:
                 "end_timestamp": end_ts
             }
         
-        # Local fallback if Turso unreachable
         is_maint = db.get_setting("maintenance_mode", "false").lower() == "true"
         reason = db.get_setting("maintenance_reason", "Тривають планові технічні роботи.")
         end_ts = int(db.get_setting("maintenance_end_ts", "0") or "0")
@@ -174,12 +200,108 @@ class TursoDatabaseClient:
         """
         res = await self.execute_query(sql, [1 if is_enabled else 0, reason, end_timestamp, now])
         
-        # Update local JSON db
         db.set_setting("maintenance_mode", "true" if is_enabled else "false")
         db.set_setting("maintenance_reason", reason)
         db.set_setting("maintenance_end_ts", str(end_timestamp))
-        
         return res is not None
+
+    # --- DEVELOPER API USERS & sk-live-... KEYS (TURSO CLOUD) ---
+    async def register_or_get_api_user(
+        self,
+        telegram_id: str,
+        first_name: str = "",
+        last_name: str = "",
+        username: str = "",
+        photo_url: str = ""
+    ) -> Dict[str, Any]:
+        """
+        Registers a Telegram developer or returns existing profile with their sk-live-... API key.
+        """
+        tg_id_str = str(telegram_id).strip()
+        now = int(time.time())
+        
+        # Check if user already exists
+        sql_check = "SELECT telegram_id, first_name, last_name, username, photo_url, api_key, created_at, requests_count, is_active FROM api_users WHERE telegram_id = ?;"
+        res = await self.execute_query(sql_check, [tg_id_str])
+        
+        if res and res.get("rows"):
+            row = res["rows"][0]
+            # Update user info if changed
+            sql_upd = "UPDATE api_users SET first_name = ?, last_name = ?, username = ?, photo_url = ? WHERE telegram_id = ?;"
+            await self.execute_query(sql_upd, [first_name, last_name, username, photo_url, tg_id_str])
+            
+            return {
+                "telegram_id": tg_id_str,
+                "first_name": first_name or str(row[1].get("value", "")),
+                "last_name": last_name or str(row[2].get("value", "")),
+                "username": username or str(row[3].get("value", "")),
+                "photo_url": photo_url or str(row[4].get("value", "")),
+                "api_key": str(row[5].get("value", "")),
+                "created_at": int(row[6].get("value", now)),
+                "requests_count": int(row[7].get("value", 0)),
+                "is_active": bool(int(row[8].get("value", 1)))
+            }
+
+        # Generate new sk-live-(24 hex chars) API key
+        new_api_key = generate_sk_live_key()
+        
+        sql_insert = """
+        INSERT INTO api_users (telegram_id, first_name, last_name, username, photo_url, api_key, created_at, last_used_at, requests_count, is_active)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 1);
+        """
+        await self.execute_query(sql_insert, [tg_id_str, first_name, last_name, username, photo_url, new_api_key, now, now])
+
+        return {
+            "telegram_id": tg_id_str,
+            "first_name": first_name,
+            "last_name": last_name,
+            "username": username,
+            "photo_url": photo_url,
+            "api_key": new_api_key,
+            "created_at": now,
+            "requests_count": 0,
+            "is_active": True
+        }
+
+    async def get_user_by_api_key(self, api_key: str) -> Optional[Dict[str, Any]]:
+        """Validates sk-live-... key from Turso Cloud DB."""
+        clean_key = str(api_key).strip()
+        if not clean_key.startswith("sk-live-"):
+            return None
+
+        sql = "SELECT telegram_id, first_name, last_name, username, api_key, requests_count, is_active FROM api_users WHERE api_key = ?;"
+        res = await self.execute_query(sql, [clean_key])
+        
+        if res and res.get("rows"):
+            row = res["rows"][0]
+            is_active = bool(int(row[6].get("value", 1)))
+            if not is_active:
+                return None
+            return {
+                "telegram_id": str(row[0].get("value", "")),
+                "first_name": str(row[1].get("value", "")),
+                "last_name": str(row[2].get("value", "")),
+                "username": str(row[3].get("value", "")),
+                "api_key": str(row[4].get("value", "")),
+                "requests_count": int(row[5].get("value", 0)),
+                "is_active": is_active
+            }
+        return None
+
+    async def increment_api_usage(self, api_key: str):
+        """Increments request counter and timestamp in Turso Cloud DB."""
+        clean_key = str(api_key).strip()
+        now = int(time.time())
+        sql = "UPDATE api_users SET requests_count = requests_count + 1, last_used_at = ? WHERE api_key = ?;"
+        await self.execute_query(sql, [now, clean_key])
+
+    async def regenerate_user_api_key(self, telegram_id: str) -> Optional[str]:
+        """Regenerates a new sk-live-... key for developer."""
+        tg_id_str = str(telegram_id).strip()
+        new_key = generate_sk_live_key()
+        sql = "UPDATE api_users SET api_key = ? WHERE telegram_id = ?;"
+        res = await self.execute_query(sql, [new_key, tg_id_str])
+        return new_key if res is not None else None
 
 # Global Turso Database Client
 turso_db = TursoDatabaseClient()

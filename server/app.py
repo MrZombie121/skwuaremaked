@@ -352,6 +352,152 @@ async def admin_page(key: Optional[str] = None):
         raise HTTPException(status_code=403, detail="Доступ заборонено: невірний ключ доступу")
     return FileResponse(os.path.join(UI_DIR, "admin.html"))
 
+# --- DEVELOPER PORTAL & OPENAI-COMPATIBLE AIRSPACE API (/v1/data) ---
+
+@app.get("/developers")
+@app.get("/developer")
+@app.get("/api-docs")
+async def developer_portal():
+    return FileResponse(os.path.join(UI_DIR, "developer.html"))
+
+class DeveloperAuthRequest(BaseModel):
+    telegram_id: str
+    first_name: Optional[str] = ""
+    last_name: Optional[str] = ""
+    username: Optional[str] = ""
+    photo_url: Optional[str] = ""
+
+@app.post("/api/dev/auth")
+async def developer_auth(req: DeveloperAuthRequest):
+    """Registers or logs in developer via Telegram and generates/returns sk-live-... key from Turso."""
+    user = await turso_db.register_or_get_api_user(
+        telegram_id=req.telegram_id,
+        first_name=req.first_name or "",
+        last_name=req.last_name or "",
+        username=req.username or req.telegram_id,
+        photo_url=req.photo_url or ""
+    )
+    return {"status": "ok", "api_key": user["api_key"], "username": user.get("username"), "telegram_id": user["telegram_id"]}
+
+class DeveloperRegenRequest(BaseModel):
+    telegram_id: str
+
+@app.post("/api/dev/regenerate-key")
+async def developer_regen_key(req: DeveloperRegenRequest):
+    new_key = await turso_db.regenerate_user_api_key(req.telegram_id)
+    if new_key:
+        return {"status": "ok", "api_key": new_key}
+    raise HTTPException(status_code=404, detail="Розробника не знайдено")
+
+async def verify_api_key_auth(request: Request) -> Dict[str, Any]:
+    """Authenticates sk-live-... API key from Authorization header or query param against Turso."""
+    auth_header = request.headers.get("Authorization", "")
+    api_key = None
+    if auth_header.startswith("Bearer "):
+        api_key = auth_header[7:].strip()
+    elif "x-api-key" in request.headers:
+        api_key = request.headers["x-api-key"].strip()
+    elif "api_key" in request.query_params:
+        api_key = request.query_params["api_key"].strip()
+
+    if not api_key:
+        raise HTTPException(
+            status_code=401,
+            detail={"error": {"message": "Missing API key. Pass 'Authorization: Bearer sk-live-...' header. Get your key at /developers", "type": "invalid_request_error", "code": "invalid_api_key"}}
+        )
+
+    user = await turso_db.get_user_by_api_key(api_key)
+    if not user:
+        if api_key.startswith("sk-live-") and len(api_key) == 32:
+            # Auto-register on Turso if valid format
+            user = await turso_db.register_or_get_api_user(telegram_id=api_key[-8:], username="developer")
+        else:
+            raise HTTPException(
+                status_code=401,
+                detail={"error": {"message": "Invalid API key provided. Obtain your key at /developers", "type": "invalid_request_error", "code": "invalid_api_key"}}
+            )
+
+    # Increment request usage asynchronously in background
+    asyncio.create_task(turso_db.increment_api_usage(api_key))
+    return user
+
+@app.get("/v1/data")
+@app.post("/v1/data")
+@app.get("/v1/threats")
+async def get_v1_airspace_data(request: Request):
+    """
+    OpenAI-compatible live airspace intelligence endpoint.
+    Returns all real-time coordinates, directions, speeds, destinations, and hazard sectors.
+    """
+    user = await verify_api_key_auth(request)
+    now = int(time.time())
+    active_targets = deduplicator.get_all_active()
+
+    counts = {
+        "total_threats": len(active_targets),
+        "shahed": len([t for t in active_targets if t.target_type == TargetType.SHAHED]),
+        "jet_uav": len([t for t in active_targets if t.target_type == TargetType.JET_UAV]),
+        "missile": len([t for t in active_targets if t.target_type == TargetType.MISSILE]),
+        "ballistic": len([t for t in active_targets if t.target_type == TargetType.BALLISTIC]),
+        "kab": len([t for t in active_targets if t.target_type == TargetType.KAB]),
+        "aircraft": len([t for t in active_targets if t.target_type == TargetType.AIRCRAFT]),
+        "recon": len([t for t in active_targets if t.target_type == TargetType.RECON]),
+        "fpv": len([t for t in active_targets if t.target_type == TargetType.FPV]),
+        "decoy": len([t for t in active_targets if t.target_type == TargetType.DECOY]),
+        "air_alert_active": len(active_targets) > 0
+    }
+
+    formatted_threats = []
+    for t in active_targets:
+        formatted_threats.append({
+            "id": t.target_id,
+            "object": "airspace.threat",
+            "type": t.target_type.value,
+            "subtype": t.target_subtype or t.target_type.value,
+            "count": t.count,
+            "status": t.status.value,
+            "coordinates": {
+                "lat": round(t.current_lat, 5),
+                "lon": round(t.current_lon, 5)
+            },
+            "location": {
+                "locality": t.current_location_name,
+                "region": getattr(t, 'region_name', None) or "Україна"
+            },
+            "target": {
+                "destination": t.destination_name,
+                "dest_lat": t.dest_lat,
+                "dest_lon": t.dest_lon,
+                "distance_km": t.distance_to_dest_km,
+                "eta_minutes": t.eta_minutes
+            },
+            "flight": {
+                "heading": t.heading.value,
+                "heading_deg": round(t.heading_deg, 1),
+                "speed_kmh": round(t.speed_kmh, 1),
+                "altitude": t.altitude_info or "Стандартна",
+                "is_circling": t.is_circling
+            },
+            "sources": t.sources,
+            "confidence": t.confidence_score,
+            "hazard_cone": t.hazard_cone or [],
+            "trajectory": t.trajectory or [],
+            "created_at": int(t.first_seen),
+            "updated_at": int(t.last_updated)
+        })
+
+    return JSONResponse(content={
+        "object": "list",
+        "created": now,
+        "model": "skywatch-c4isr-v2.1",
+        "summary": counts,
+        "data": formatted_threats,
+        "usage": {
+            "developer": user.get("username") or user.get("telegram_id"),
+            "requests_total": user.get("requests_count", 0) + 1
+        }
+    })
+
 @app.get("/api/maintenance/status")
 async def get_maintenance_status():
     state = await turso_db.get_maintenance_state()

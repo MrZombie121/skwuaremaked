@@ -78,7 +78,7 @@ class GeminiAnalystService:
             "Content-Type": "application/json"
         }
         if "openrouter" in endpoint:
-            headers["HTTP-Referer"] = "https://skywatchua.onrender.com"
+            headers["HTTP-Referer"] = "https://ua-skywatch.pp.ua"
             headers["X-Title"] = "SkyWatch Radar"
 
         payload = {

@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SKYWATCH — Портал розробника та Документація API (v1/data)</title>
+    <!-- Tactical Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700;800&family=Orbitron:wght@600;700;800;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/ui/css/style.css">
+    <style>
+        body {
+            background-color: #06090e;
+            height: auto;
+            min-height: 100vh;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .dev-container {
+            max-width: 1200px;
+            width: 100%;
+            margin: 0 auto;
+            padding: 30px 20px 60px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 28px;
+        }
+
+        .dev-hero {
+            background: linear-gradient(135deg, rgba(0, 229, 255, 0.08) 0%, rgba(16, 23, 34, 0.95) 100%);
+            border: 2px solid #1a2738;
+            border-top: 4px solid #00e5ff;
+            border-radius: 6px;
+            padding: 28px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.9), 0 0 25px rgba(0, 229, 255, 0.15);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+
+        .hero-text h1 {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 22px;
+            font-weight: 900;
+            color: #f0f6fc;
+            letter-spacing: 2px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .hero-desc {
+            font-size: 12.5px;
+            color: #a0aec0;
+            margin-top: 6px;
+            line-height: 1.5;
+            max-width: 650px;
+        }
+
+        .auth-card {
+            background: #101722;
+            border: 1px solid #1a2738;
+            border-radius: 6px;
+            padding: 22px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .key-display-box {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            background: #06090e;
+            border: 1px solid #1a2738;
+            padding: 8px 12px;
+            border-radius: 4px;
+        }
+
+        .key-val {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 14px;
+            font-weight: 800;
+            color: #00ff88;
+            letter-spacing: 1px;
+            flex: 1;
+            user-select: all;
+        }
+
+        .code-tabs {
+            display: flex;
+            gap: 4px;
+            border-bottom: 1px solid #1a2738;
+            background: #080d14;
+            padding: 8px 12px 0 12px;
+            border-radius: 6px 6px 0 0;
+        }
+
+        .code-tab {
+            background: transparent;
+            border: none;
+            color: #6b7a8d;
+            padding: 8px 14px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            font-weight: 700;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+        }
+
+        .code-tab.active {
+            color: #00e5ff;
+            border-bottom-color: #00e5ff;
+            background: #101722;
+        }
+
+        .code-block {
+            background: #0a0f16;
+            border: 1px solid #1a2738;
+            border-top: none;
+            padding: 18px;
+            border-radius: 0 0 6px 6px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            color: #f0f6fc;
+            line-height: 1.6;
+            overflow-x: auto;
+            position: relative;
+        }
+
+        .copy-code-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: #101722;
+            border: 1px solid #1a2738;
+            color: #a0aec0;
+            padding: 4px 8px;
+            font-size: 10px;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        .copy-code-btn:hover {
+            color: #fff;
+            border-color: #00e5ff;
+        }
+
+        .endpoint-badge {
+            background: rgba(0, 255, 136, 0.15);
+            border: 1px solid #00ff88;
+            color: #00ff88;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            font-weight: 800;
+        }
+
+        .doc-section {
+            background: #101722;
+            border: 1px solid #1a2738;
+            border-radius: 6px;
+            padding: 22px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .doc-section h2 {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 14px;
+            font-weight: 800;
+            color: #00e5ff;
+            letter-spacing: 1px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .param-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 11.5px;
+        }
+
+        .param-table th {
+            background: #080d14;
+            padding: 10px;
+            text-align: left;
+            color: #6b7a8d;
+            border-bottom: 1px solid #1a2738;
+        }
+
+        .param-table td {
+            padding: 10px;
+            border-bottom: 1px solid #1a2738;
+            color: #c3ced9;
+        }
+
+        .param-name {
+            font-family: 'JetBrains Mono', monospace;
+            color: #00e5ff;
+            font-weight: 700;
+        }
+
+        .param-type {
+            font-size: 10px;
+            color: #ff9100;
+        }
+    </style>
+</head>
+<body>
+    <!-- Top HUD Header -->
+    <header class="hud-header">
+        <div class="logo-section">
+            <div class="radar-spinner"></div>
+            <div class="logo-title">
+                <h1>SKYWATCH <span class="badge-tag">DEVELOPER API</span></h1>
+                <span class="sub-title">OPENAI-COMPATIBLE AIRSPACE INTELLIGENCE ENDPOINT (v1/data)</span>
+            </div>
+        </div>
+
+        <div class="hud-controls">
+            <a href="/" class="hud-btn highlight">
+                🗺️ ВІДКРИТИ РАДАР
+            </a>
+            <div class="clock-box" id="kyiv-clock">00:00:00 KYIV</div>
+        </div>
+    </header>
+
+    <div class="dev-container">
+        <!-- Hero Banner -->
+        <div class="dev-hero">
+            <div class="hero-text">
+                <h1>⚡ SKYWATCH OPEN API <span class="badge-tag" style="background: rgba(0,255,136,0.15); color: #00ff88; border-color: #00ff88;">v1.0 LIVE</span></h1>
+                <div class="hero-desc">
+                    Отримуйте точні живі координати, напрямки, швидкості та цілі польоту повітряних загроз над Україною у реальному часі через швидкий OpenAI-подібний REST API (<code>GET /v1/data</code>).
+                </div>
+            </div>
+            <div class="endpoint-badge" id="hero-endpoint-badge">GET https://ua-skywatch.pp.ua/v1/data</div>
+        </div>
+
+        <!-- Developer Account & API Key Section -->
+        <div class="auth-card" id="dev-auth-card">
+            <div class="card-title">
+                <span>🔑 ВАШ API КЛЮЧ ДОСТУПУ (sk-live-...)</span>
+                <span id="dev-user-badge" class="badge" style="color: #00ff88; border-color: #00ff88;">АКТИВНО</span>
+            </div>
+
+            <!-- Logged In State (Default / Synced) -->
+            <div id="dev-logged-in-view">
+                <div style="font-size: 12px; color: #a0aec0; margin-bottom: 6px;">
+                    Використовуйте цей секретний ключ у заголовку <code>Authorization: Bearer sk-live-...</code> для автентифікації ваших запитів:
+                </div>
+                
+                <div class="key-display-box">
+                    <span class="key-val" id="api-key-text">sk-live-9c6e3b1157ec93ef030fbb98</span>
+                    <button class="hud-btn" onclick="copyApiKey()">📋 СКОПІЮВАТИ</button>
+                    <button class="hud-btn danger" onclick="regenerateApiKey()">🔄 ПЕРЕГЕНЕРУВАТИ</button>
+                </div>
+
+                <div style="display: flex; gap: 16px; margin-top: 10px; font-size: 11px; color: #6b7a8d;">
+                    <div>• Розробник: <b id="dev-username" class="text-cyan">@developer</b></div>
+                    <div>• Збережено в: <b class="text-green">Turso Cloud Database</b></div>
+                    <div>• Ліміт: <b class="text-orange">Безліміт (Free Tier)</b></div>
+                </div>
+            </div>
+
+            <!-- Telegram Registration / Link Form (For New Developers) -->
+            <div id="dev-telegram-login-box" style="display: none; background: #06090e; padding: 16px; border-radius: 4px; border: 1px dashed #00e5ff;">
+                <div style="font-weight: 800; color: #00e5ff; font-size: 12px; margin-bottom: 8px;">
+                    📲 ВХІД ЧЕРЕЗ TELEGRAM ДЛЯ ОТРИМАННЯ API КЛЮЧА
+                </div>
+                <div style="font-size: 11.5px; color: #c3ced9; margin-bottom: 12px;">
+                    Введіть ваш Telegram ID або Username для миттєвої реєстрації в базі даних Turso та генерації особистого ключа <code>sk-live-...</code>:
+                </div>
+                <form id="form-dev-tg-register" style="display: flex; gap: 8px;">
+                    <input type="text" id="input-dev-tg" class="hud-input" placeholder="Ваш @username або Telegram ID" required style="max-width: 350px;">
+                    <button type="submit" class="hud-btn highlight">🚀 ОТРИМАТИ API КЛЮЧ</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Live Interactive Console (Try in Browser) -->
+        <div class="doc-section">
+            <h2>🧪 ІНТЕРАКТИВНА КОНСОЛЬ (ТЕСТУВАННЯ В БРАУЗЕРІ)</h2>
+            <div style="font-size: 12px; color: #a0aec0;">
+                Перевірте роботу API в реальному часі прямо з браузера:
+            </div>
+            <div style="display: flex; gap: 8px;">
+                <button class="hud-btn highlight" style="font-weight: 800;" onclick="testLiveApi()">
+                    ⚡ НАДІСЛАТИ ТЕСТОВИЙ ЗАПИТ ДО /v1/data
+                </button>
+                <span id="api-latency-meter" style="align-self: center; font-size: 11px; color: #00ff88;"></span>
+            </div>
+            <pre class="code-block" id="api-test-response" style="max-height: 320px; overflow-y: auto; border-top: 1px solid #1a2738;">// Натисніть кнопку вище для перегляду живої відповіді API...</pre>
+        </div>
+
+        <!-- Quick Code Examples -->
+        <div class="doc-section">
+            <h2>💻 ПРИКЛАДИ КОДУ ДЛЯ ІНТЕГРАЦІЇ</h2>
+            <div class="code-tabs">
+                <button class="code-tab active" onclick="switchCodeTab('curl')">cURL</button>
+                <button class="code-tab" onclick="switchCodeTab('python')">Python (requests)</button>
+                <button class="code-tab" onclick="switchCodeTab('python-async')">Python (aiohttp)</button>
+                <button class="code-tab" onclick="switchCodeTab('javascript')">JavaScript (fetch)</button>
+                <button class="code-tab" onclick="switchCodeTab('nodejs')">Node.js</button>
+            </div>
+
+            <!-- cURL -->
+            <div id="code-curl" class="code-block">
+                <button class="copy-code-btn" onclick="copySnippet('code-curl-text')">Копіювати</button>
+                <pre id="code-curl-text">curl -X GET "<span class="snippet-url">https://ua-skywatch.pp.ua/v1/data</span>" \
+     -H "Authorization: Bearer <span class="snippet-key">sk-live-9c6e3b1157ec93ef030fbb98</span>"</pre>
+            </div>
+
+            <!-- Python Requests -->
+            <div id="code-python" class="code-block" style="display: none;">
+                <button class="copy-code-btn" onclick="copySnippet('code-python-text')">Копіювати</button>
+                <pre id="code-python-text">import requests
+
+url = "<span class="snippet-url">https://ua-skywatch.pp.ua/v1/data</span>"
+headers = {
+    "Authorization": "Bearer <span class="snippet-key">sk-live-9c6e3b1157ec93ef030fbb98</span>"
+}
+
+response = requests.get(url, headers=headers)
+data = response.json()
+
+print(f"Активних цілей: {data['summary']['total_threats']}")
+for threat in data['data']:
+    print(f"[{threat['type']}] {threat['location']['locality']} ➔ {threat['target']['destination']} | Швидкість: {threat['flight']['speed_kmh']} км/год")</pre>
+            </div>
+
+            <!-- Python aiohttp -->
+            <div id="code-python-async" class="code-block" style="display: none;">
+                <button class="copy-code-btn" onclick="copySnippet('code-python-async-text')">Копіювати</button>
+                <pre id="code-python-async-text">import aiohttp
+import asyncio
+
+async def fetch_threats():
+    url = "<span class="snippet-url">https://ua-skywatch.pp.ua/v1/data</span>"
+    headers = {"Authorization": "Bearer <span class="snippet-key">sk-live-9c6e3b1157ec93ef030fbb98</span>"}
+    
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, headers=headers) as resp:
+            data = await resp.json()
+            print("Отримано цілей:", len(data.get("data", [])))
+
+asyncio.run(fetch_threats())</pre>
+            </div>
+
+            <!-- JavaScript Fetch -->
+            <div id="code-javascript" class="code-block" style="display: none;">
+                <button class="copy-code-btn" onclick="copySnippet('code-javascript-text')">Копіювати</button>
+                <pre id="code-javascript-text">fetch('<span class="snippet-url">https://ua-skywatch.pp.ua/v1/data</span>', {
+    headers: {
+        'Authorization': 'Bearer <span class="snippet-key">sk-live-9c6e3b1157ec93ef030fbb98</span>'
+    }
+})
+.then(res => res.json())
+.then(data => {
+    console.log('Активні повітряні загрози:', data.data);
+});</pre>
+            </div>
+
+            <!-- Node.js -->
+            <div id="code-nodejs" class="code-block" style="display: none;">
+                <button class="copy-code-btn" onclick="copySnippet('code-nodejs-text')">Копіювати</button>
+                <pre id="code-nodejs-text">const axios = require('axios');
+
+async function getAirspaceData() {
+    const res = await axios.get('<span class="snippet-url">https://ua-skywatch.pp.ua/v1/data</span>', {
+        headers: { 'Authorization': 'Bearer <span class="snippet-key">sk-live-9c6e3b1157ec93ef030fbb98</span>' }
+    });
+    console.log(res.data);
+}
+getAirspaceData();</pre>
+            </div>
+        </div>
+
+        <!-- API Reference Documentation -->
+        <div class="doc-section">
+            <h2>📖 СПЕЦИФІКАЦІЯ ПОЛІВ ВІДПОВІДІ (JSON SCHEMA)</h2>
+            <table class="param-table">
+                <thead>
+                    <tr>
+                        <th>ПАРАМЕТР</th>
+                        <th>ТИП</th>
+                        <th>ОПИС</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td class="param-name">id</td>
+                        <td class="param-type">string</td>
+                        <td>Унікальний ідентифікатор цілі (напр. <code>TGT-SH-101</code>, <code>TGT-MS-102</code>).</td>
+                    </tr>
+                    <tr>
+                        <td class="param-name">type</td>
+                        <td class="param-type">string</td>
+                        <td>Клас загрози: <code>SHAHED</code>, <code>JET_UAV</code>, <code>MISSILE</code>, <code>BALLISTIC</code>, <code>KAB</code>, <code>AIRCRAFT</code>, <code>RECON</code>, <code>FPV</code>, <code>DECOY</code>.</td>
+                    </tr>
+                    <tr>
+                        <td class="param-name">coordinates</td>
+                        <td class="param-type">object</td>
+                        <td>Точні поточні GPS-координати цілі (<code>lat</code>: широта, <code>lon</code>: довгота).</td>
+                    </tr>
+                    <tr>
+                        <td class="param-name">location</td>
+                        <td class="param-type">object</td>
+                        <td>Населений пункт виявлення (<code>locality</code>: місто/село, <code>region</code>: область).</td>
+                    </tr>
+                    <tr>
+                        <td class="param-name">target</td>
+                        <td class="param-type">object</td>
+                        <td>Пункт призначення (<code>destination</code>, <code>dest_lat</code>, <code>dest_lon</code>, <code>distance_km</code>, <code>eta_minutes</code>).</td>
+                    </tr>
+                    <tr>
+                        <td class="param-name">flight</td>
+                        <td class="param-type">object</td>
+                        <td>Параметри польоту (<code>heading</code>, <code>heading_deg</code>, <code>speed_kmh</code>, <code>altitude</code>, <code>is_circling</code>).</td>
+                    </tr>
+                    <tr>
+                        <td class="param-name">hazard_cone</td>
+                        <td class="param-type">array</td>
+                        <td>Полігон небезпечного сектора підльоту (список координат <code>[[lat, lon], ...]</code>).</td>
+                    </tr>
+                    <tr>
+                        <td class="param-name">summary</td>
+                        <td class="param-type">object</td>
+                        <td>Зведена статистика загрози у повітряному просторі за всіма типами.</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        let currentApiKey = localStorage.getItem("skywatch_dev_api_key") || "sk-live-9c6e3b1157ec93ef030fbb98";
+        let currentTgUser = localStorage.getItem("skywatch_dev_user") || "developer";
+
+        function updateKeyDisplay() {
+            const origin = window.location.origin || "https://ua-skywatch.pp.ua";
+            const badge = document.getElementById('hero-endpoint-badge');
+            if (badge) badge.innerText = `GET ${origin}/v1/data`;
+
+            document.getElementById('api-key-text').innerText = currentApiKey;
+            document.getElementById('dev-username').innerText = `@${currentTgUser}`;
+            document.querySelectorAll('.snippet-key').forEach(el => el.innerText = currentApiKey);
+            document.querySelectorAll('.snippet-url').forEach(el => el.innerText = `${origin}/v1/data`);
+        }
+
+        function switchCodeTab(lang) {
+            document.querySelectorAll('.code-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.code-block[id^="code-"]').forEach(b => b.style.display = 'none');
+            
+            event.target.classList.add('active');
+            const targetBlock = document.getElementById(`code-${lang}`);
+            if (targetBlock) targetBlock.style.display = 'block';
+        }
+
+        function copyApiKey() {
+            navigator.clipboard.writeText(currentApiKey).then(() => {
+                alert("✅ API ключ успішно скопійовано в буфер обміну!");
+            });
+        }
+
+        function copySnippet(id) {
+            const el = document.getElementById(id);
+            if (el) {
+                navigator.clipboard.writeText(el.innerText).then(() => {
+                    alert("✅ Приклад коду скопійовано!");
+                });
+            }
+        }
+
+        async function testLiveApi() {
+            const respBox = document.getElementById('api-test-response');
+            const latencyBox = document.getElementById('api-latency-meter');
+            
+            respBox.innerText = "// Надсилання запиту до https://skywatchua.onrender.com/v1/data...";
+            const start = performance.now();
+
+            try {
+                const resp = await fetch('/v1/data', {
+                    headers: { 'Authorization': `Bearer ${currentApiKey}` }
+                });
+                const duration = Math.round(performance.now() - start);
+                latencyBox.innerText = `⏱️ Latency: ${duration}ms | HTTP ${resp.status}`;
+
+                const data = await resp.json();
+                respBox.innerText = JSON.stringify(data, null, 2);
+            } catch (err) {
+                respBox.innerText = `// Помилка з'єднання: ${err}`;
+            }
+        }
+
+        async function regenerateApiKey() {
+            if (!confirm("Ви впевнені, що хочете перегенерувати API ключ? Старий ключ припинить роботу.")) return;
+            try {
+                const resp = await fetch('/api/dev/regenerate-key', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ telegram_id: currentTgUser })
+                });
+                const data = await resp.json();
+                if (data.status === 'ok' && data.api_key) {
+                    currentApiKey = data.api_key;
+                    localStorage.setItem("skywatch_dev_api_key", currentApiKey);
+                    updateKeyDisplay();
+                    alert("✅ Новий API ключ успішно згенеровано та збережено в базі Turso!");
+                }
+            } catch (e) {
+                alert("Помилка генерації ключа: " + e);
+            }
+        }
+
+        // Registration form for new devs
+        document.getElementById('form-dev-tg-register')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const inputVal = document.getElementById('input-dev-tg').value.trim();
+            if (!inputVal) return;
+
+            try {
+                const resp = await fetch('/api/dev/auth', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        telegram_id: inputVal.replace('@', ''),
+                        username: inputVal.replace('@', '')
+                    })
+                });
+                const data = await resp.json();
+                if (data.status === 'ok' && data.api_key) {
+                    currentApiKey = data.api_key;
+                    currentTgUser = data.username || inputVal;
+                    localStorage.setItem("skywatch_dev_api_key", currentApiKey);
+                    localStorage.setItem("skywatch_dev_user", currentTgUser);
+                    updateKeyDisplay();
+                    alert("✅ Вітаємо! Ваш акаунт зареєстровано в Turso та згенеровано ключ sk-live-...");
+                }
+            } catch (err) {
+                alert("Помилка реєстрації: " + err);
+            }
+        });
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            updateKeyDisplay();
+            setInterval(() => {
+                const now = new Date();
+                const kyivTime = now.toLocaleTimeString('uk-UA', { timeZone: 'Europe/Kyiv' });
+                document.getElementById('kyiv-clock').innerText = `${kyivTime} KYIV`;
+            }, 1000);
+        });
+    </script>
+</body>
+</html>
