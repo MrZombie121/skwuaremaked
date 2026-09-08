@@ -248,40 +248,41 @@
         <!-- Developer Account & API Key Section -->
         <div class="auth-card" id="dev-auth-card">
             <div class="card-title">
-                <span>🔑 ВАШ API КЛЮЧ ДОСТУПУ (sk-live-...)</span>
-                <span id="dev-user-badge" class="badge" style="color: #00ff88; border-color: #00ff88;">АКТИВНО</span>
+                <span>🔑 ОСОБИСТИЙ API КЛЮЧ РОЗРОБНИКА (sk-live-...)</span>
+                <span id="dev-user-badge" class="badge" style="color: #ff9100; border-color: #ff9100;">ПОТРІБЕН ВХІД</span>
             </div>
 
-            <!-- Logged In State (Default / Synced) -->
-            <div id="dev-logged-in-view">
+            <!-- Logged In State (Hidden by default until user logs in via Telegram) -->
+            <div id="dev-logged-in-view" style="display: none;">
                 <div style="font-size: 12px; color: #a0aec0; margin-bottom: 6px;">
                     Використовуйте цей секретний ключ у заголовку <code>Authorization: Bearer sk-live-...</code> для автентифікації ваших запитів:
                 </div>
                 
                 <div class="key-display-box">
-                    <span class="key-val" id="api-key-text">sk-live-9c6e3b1157ec93ef030fbb98</span>
+                    <span class="key-val" id="api-key-text">sk-live-************************</span>
                     <button class="hud-btn" onclick="copyApiKey()">📋 СКОПІЮВАТИ</button>
                     <button class="hud-btn danger" onclick="regenerateApiKey()">🔄 ПЕРЕГЕНЕРУВАТИ</button>
+                    <button class="hud-btn" style="border-color: #6b7a8d; color: #a0aec0;" onclick="logoutDev()">🚪 ВИЙТИ</button>
                 </div>
 
-                <div style="display: flex; gap: 16px; margin-top: 10px; font-size: 11px; color: #6b7a8d;">
-                    <div>• Розробник: <b id="dev-username" class="text-cyan">@developer</b></div>
+                <div style="display: flex; flex-wrap: wrap; gap: 16px; margin-top: 10px; font-size: 11px; color: #6b7a8d;">
+                    <div>• Розробник: <b id="dev-username" class="text-cyan">@username</b></div>
                     <div>• Збережено в: <b class="text-green">Turso Cloud Database</b></div>
-                    <div>• Ліміт: <b class="text-orange">Безліміт (Free Tier)</b></div>
+                    <div>• Тариф: <b class="text-orange">Free Developer Tier</b></div>
                 </div>
             </div>
 
-            <!-- Telegram Registration / Link Form (For New Developers) -->
-            <div id="dev-telegram-login-box" style="display: none; background: #06090e; padding: 16px; border-radius: 4px; border: 1px dashed #00e5ff;">
-                <div style="font-weight: 800; color: #00e5ff; font-size: 12px; margin-bottom: 8px;">
+            <!-- Telegram Registration / Login Card (Shown when not logged in) -->
+            <div id="dev-telegram-login-box" style="display: block; background: #06090e; padding: 20px; border-radius: 4px; border: 1px dashed #00e5ff;">
+                <div style="font-weight: 800; color: #00e5ff; font-size: 13px; margin-bottom: 8px;">
                     📲 ВХІД ЧЕРЕЗ TELEGRAM ДЛЯ ОТРИМАННЯ API КЛЮЧА
                 </div>
-                <div style="font-size: 11.5px; color: #c3ced9; margin-bottom: 12px;">
-                    Введіть ваш Telegram ID або Username для миттєвої реєстрації в базі даних Turso та генерації особистого ключа <code>sk-live-...</code>:
+                <div style="font-size: 11.5px; color: #c3ced9; margin-bottom: 14px; line-height: 1.5;">
+                    Щоб згенерувати особистий ключ <code>sk-live-...</code> і отримати доступ до даних радара, введіть ваш Telegram @username або ID. Ваш акаунт буде зареєстровано в хмарній базі Turso:
                 </div>
-                <form id="form-dev-tg-register" style="display: flex; gap: 8px;">
-                    <input type="text" id="input-dev-tg" class="hud-input" placeholder="Ваш @username або Telegram ID" required style="max-width: 350px;">
-                    <button type="submit" class="hud-btn highlight">🚀 ОТРИМАТИ API КЛЮЧ</button>
+                <form id="form-dev-tg-register" style="display: flex; flex-wrap: wrap; gap: 8px;">
+                    <input type="text" id="input-dev-tg" class="hud-input" placeholder="Ваш @username або Telegram ID (напр. @my_bot_dev)" required style="max-width: 380px;">
+                    <button type="submit" class="hud-btn highlight" style="font-weight: 800;" id="btn-dev-register">🚀 УВІЙТИ ТА ОТРИМАТИ API КЛЮЧ</button>
                 </form>
             </div>
         </div>
@@ -442,18 +443,53 @@ getAirspaceData();</pre>
     </div>
 
     <script>
-        let currentApiKey = localStorage.getItem("skywatch_dev_api_key") || "sk-live-9c6e3b1157ec93ef030fbb98";
-        let currentTgUser = localStorage.getItem("skywatch_dev_user") || "developer";
+        let currentApiKey = localStorage.getItem("skywatch_dev_api_key") || null;
+        let currentTgUser = localStorage.getItem("skywatch_dev_user") || null;
 
         function updateKeyDisplay() {
             const origin = window.location.origin || "https://ua-skywatch.pp.ua";
             const badge = document.getElementById('hero-endpoint-badge');
             if (badge) badge.innerText = `GET ${origin}/v1/data`;
 
-            document.getElementById('api-key-text').innerText = currentApiKey;
-            document.getElementById('dev-username').innerText = `@${currentTgUser}`;
-            document.querySelectorAll('.snippet-key').forEach(el => el.innerText = currentApiKey);
+            const loggedInView = document.getElementById('dev-logged-in-view');
+            const loginBox = document.getElementById('dev-telegram-login-box');
+            const userBadge = document.getElementById('dev-user-badge');
+            const keyText = document.getElementById('api-key-text');
+            const usernameEl = document.getElementById('dev-username');
+
+            if (currentApiKey && currentApiKey.startsWith('sk-live-')) {
+                // USER IS LOGGED IN
+                if (loggedInView) loggedInView.style.display = 'block';
+                if (loginBox) loginBox.style.display = 'none';
+                if (userBadge) {
+                    userBadge.innerText = "АКТИВНО";
+                    userBadge.style.color = "#00ff88";
+                    userBadge.style.borderColor = "#00ff88";
+                }
+                if (keyText) keyText.innerText = currentApiKey;
+                if (usernameEl) usernameEl.innerText = `@${currentTgUser || 'developer'}`;
+                document.querySelectorAll('.snippet-key').forEach(el => el.innerText = currentApiKey);
+            } else {
+                // USER IS NOT LOGGED IN
+                if (loggedInView) loggedInView.style.display = 'none';
+                if (loginBox) loginBox.style.display = 'block';
+                if (userBadge) {
+                    userBadge.innerText = "ПОТРІБЕН ВХІД";
+                    userBadge.style.color = "#ff9100";
+                    userBadge.style.borderColor = "#ff9100";
+                }
+                document.querySelectorAll('.snippet-key').forEach(el => el.innerText = "sk-live-ВАШ_КЛЮЧ");
+            }
             document.querySelectorAll('.snippet-url').forEach(el => el.innerText = `${origin}/v1/data`);
+        }
+
+        function logoutDev() {
+            if (!confirm("Вийти з акаунта розробника?")) return;
+            localStorage.removeItem("skywatch_dev_api_key");
+            localStorage.removeItem("skywatch_dev_user");
+            currentApiKey = null;
+            currentTgUser = null;
+            updateKeyDisplay();
         }
 
         function switchCodeTab(lang) {
@@ -466,6 +502,7 @@ getAirspaceData();</pre>
         }
 
         function copyApiKey() {
+            if (!currentApiKey) return;
             navigator.clipboard.writeText(currentApiKey).then(() => {
                 alert("✅ API ключ успішно скопійовано в буфер обміну!");
             });
@@ -484,7 +521,13 @@ getAirspaceData();</pre>
             const respBox = document.getElementById('api-test-response');
             const latencyBox = document.getElementById('api-latency-meter');
             
-            respBox.innerText = "// Надсилання запиту до https://skywatchua.onrender.com/v1/data...";
+            if (!currentApiKey) {
+                alert("🔒 Спочатку увійдіть через Telegram вище, щоб отримати API-ключ для тестування!");
+                return;
+            }
+
+            const origin = window.location.origin || "https://ua-skywatch.pp.ua";
+            respBox.innerText = `// Надсилання запиту до ${origin}/v1/data...`;
             const start = performance.now();
 
             try {
@@ -527,19 +570,26 @@ getAirspaceData();</pre>
             const inputVal = document.getElementById('input-dev-tg').value.trim();
             if (!inputVal) return;
 
+            const btn = document.getElementById('btn-dev-register');
+            if (btn) {
+                btn.disabled = true;
+                btn.innerText = "⏳ Створення в Turso...";
+            }
+
             try {
+                const cleanTg = inputVal.replace('@', '');
                 const resp = await fetch('/api/dev/auth', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        telegram_id: inputVal.replace('@', ''),
-                        username: inputVal.replace('@', '')
+                        telegram_id: cleanTg,
+                        username: cleanTg
                     })
                 });
                 const data = await resp.json();
                 if (data.status === 'ok' && data.api_key) {
                     currentApiKey = data.api_key;
-                    currentTgUser = data.username || inputVal;
+                    currentTgUser = data.username || cleanTg;
                     localStorage.setItem("skywatch_dev_api_key", currentApiKey);
                     localStorage.setItem("skywatch_dev_user", currentTgUser);
                     updateKeyDisplay();
@@ -547,6 +597,11 @@ getAirspaceData();</pre>
                 }
             } catch (err) {
                 alert("Помилка реєстрації: " + err);
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerText = "🚀 УВІЙТИ ТА ОТРИМАТИ API КЛЮЧ";
+                }
             }
         });
 
