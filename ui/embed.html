@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>SKYWATCH — Вбудований тактичний радар повітряних загроз</title>
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- Tactical Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700;800&family=Orbitron:wght@600;700;800;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/ui/css/style.css?v=2.7.2">
+    <style>
+        body, html {
+            height: 100%;
+            width: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #06090e;
+        }
+
+        #embed-layout {
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            height: 100%;
+            position: relative;
+        }
+
+        /* Compact Embed Header (Optional) */
+        .embed-header {
+            height: 38px;
+            background: rgba(10, 15, 22, 0.95);
+            border-bottom: 1px solid #1a2738;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 12px;
+            z-index: 1000;
+        }
+
+        .embed-title {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 11px;
+            font-weight: 800;
+            color: #f0f6fc;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .embed-stats {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+        }
+
+        .embed-badge {
+            font-size: 9px;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-weight: 800;
+            background: #101722;
+            border: 1px solid #1a2738;
+            color: #c3ced9;
+        }
+
+        .embed-watermark {
+            position: absolute;
+            top: 10px;
+            left: 12px;
+            background: rgba(10, 15, 22, 0.85);
+            border: 1px solid rgba(0, 229, 255, 0.4);
+            color: #00e5ff;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 10px;
+            font-weight: 800;
+            z-index: 999;
+            text-decoration: none;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.6);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .embed-watermark:hover {
+            background: rgba(0, 229, 255, 0.2);
+        }
+
+        #embed-map {
+            width: 100%;
+            height: 100%;
+            flex: 1;
+            background: #070b10 !important;
+        }
+    </style>
+</head>
+<body>
+    <div id="embed-layout">
+        <!-- Optional Compact Top Bar -->
+        <div class="embed-header" id="embed-header-bar" style="display: none;">
+            <div class="embed-title">
+                <span style="color: #00e5ff;">SKYWATCH</span>
+                <span class="badge-tag" style="font-size: 8px;">LIVE AIRSPACE</span>
+            </div>
+            <div class="embed-stats">
+                <div class="embed-badge" style="border-color: #ff2a4b; color: #ff2a4b;">ЗАГРОЗ: <b id="embed-threats-count">0</b></div>
+                <div class="embed-badge" style="color: #00ff88;">ONLINE</div>
+            </div>
+        </div>
+
+        <!-- Fullscreen Leaflet Map Container -->
+        <div style="flex: 1; position: relative; width: 100%; height: 100%;">
+            <div id="embed-map"></div>
+            <!-- Brand Link Badge -->
+            <a href="/" target="_blank" class="embed-watermark" id="embed-brand-badge">
+                <span style="color: #ff2a4b;">●</span> SKYWATCH RADAR
+            </a>
+            <!-- Coordinates -->
+            <div class="map-coordinates" id="cursor-coords" style="bottom: 8px; left: 8px; font-size: 9.5px;">LAT: 00.0000 | LON: 00.0000</div>
+        </div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // Parse Embed Query Parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const apiKey = urlParams.get('api_key') || urlParams.get('key') || '';
+        const theme = urlParams.get('theme') || 'dark';
+        const showHud = urlParams.get('hud') === 'true';
+        const showBrand = urlParams.get('brand') !== 'false';
+        const initialZoom = parseFloat(urlParams.get('zoom')) || 6.5;
+        const initialLat = parseFloat(urlParams.get('lat')) || 48.3794;
+        const initialLon = parseFloat(urlParams.get('lon')) || 31.1656;
+
+        if (showHud) {
+            document.getElementById('embed-header-bar').style.display = 'flex';
+        }
+        if (!showBrand) {
+            document.getElementById('embed-brand-badge').style.display = 'none';
+        }
+
+        // Initialize Map
+        const ukraineBounds = [[43.8, 21.5], [52.8, 40.5]];
+        const map = L.map('embed-map', {
+            center: [initialLat, initialLon],
+            zoom: initialZoom,
+            minZoom: 4.5,
+            maxZoom: 16,
+            maxBounds: ukraineBounds,
+            zoomControl: false
+        });
+
+        L.control.zoom({ position: 'topright' }).addTo(map);
+
+        // Tile Layers
+        const baseLayers = {
+            dark: L.tileLayer('https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&hl=uk', {
+                attribution: '&copy; Google Maps',
+                subdomains: ['0', '1', '2', '3'],
+                className: 'google-dark-tactical',
+                maxZoom: 20
+            }),
+            satellite: L.tileLayer('https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}&hl=uk', {
+                attribution: '&copy; Google Maps Satellite',
+                subdomains: ['0', '1', '2', '3'],
+                maxZoom: 20
+            }),
+            contrast: L.tileLayer('https://mt{s}.google.com/vt/lyrs=p&x={x}&y={y}&z={z}&hl=uk', {
+                attribution: '&copy; Google Maps Terrain',
+                subdomains: ['0', '1', '2', '3'],
+                className: 'google-dark-tactical',
+                maxZoom: 20
+            }),
+            esriDark: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+                attribution: '&copy; Esri',
+                maxZoom: 16
+            })
+        };
+
+        (baseLayers[theme] || baseLayers.dark).addTo(map);
+
+        map.on('mousemove', (e) => {
+            document.getElementById('cursor-coords').innerText = `LAT: ${e.latlng.lat.toFixed(4)} | LON: ${e.latlng.lng.toFixed(4)}`;
+        });
+
+        let markersMap = new Map();
+        let lastAnimTimestamp = performance.now();
+
+        function createCustomMarkerIcon(target) {
+            let iconFile = '/markers/shahed.png?v=2.1.0';
+            switch (target.target_type) {
+                case 'AIRCRAFT': iconFile = '/markers/aircraft.png?v=2.1.0'; break;
+                case 'JET_UAV': iconFile = '/markers/rs.png?v=2.1.0'; break;
+                case 'MISSILE': iconFile = '/markers/missile.png?v=2.1.0'; break;
+                case 'BALLISTIC': iconFile = '/markers/ballistic.png?v=2.1.0'; break;
+                case 'KAB': iconFile = '/markers/kab.png?v=2.1.0'; break;
+                case 'RECON': iconFile = '/markers/recon.png?v=2.1.0'; break;
+                case 'FPV': iconFile = '/markers/fpv.png?v=2.1.0'; break;
+                case 'DECOY': iconFile = '/markers/decoy.png?v=2.1.0'; break;
+                default: iconFile = '/markers/shahed.png?v=2.1.0'; break;
+            }
+
+            const rotation = (target.heading_deg !== undefined && target.heading_deg !== null) ? target.heading_deg : 0;
+            const circlingClass = target.is_circling ? 'circling-target' : '';
+
+            const html = `
+                <div class="radar-threat-icon ${circlingClass}" style="transform: rotate(${rotation}deg);">
+                    <img src="${iconFile}" class="threat-img" style="width: 34px; height: 34px;" alt="${target.target_type}">
+                </div>
+            `;
+
+            return L.divIcon({
+                className: 'custom-radar-marker',
+                html: html,
+                iconSize: [40, 40],
+                iconAnchor: [20, 20]
+            });
+        }
+
+        function calculateProjectedPoint(lat, lon, bearingDeg, distanceKm = 25) {
+            const r = 6371;
+            const d = distanceKm / r;
+            const radBearing = (bearingDeg * Math.PI) / 180;
+            const radLat = (lat * Math.PI) / 180;
+            const radLon = (lon * Math.PI) / 180;
+
+            const lat2 = Math.asin(
+                Math.sin(radLat) * Math.cos(d) +
+                Math.cos(radLat) * Math.sin(d) * Math.cos(radBearing)
+            );
+            const lon2 = radLon + Math.atan2(
+                Math.sin(radBearing) * Math.sin(d) * Math.cos(radLat),
+                Math.cos(d) - Math.sin(radLat) * Math.sin(lat2)
+            );
+
+            return [(lat2 * 180) / Math.PI, (lon2 * 180) / Math.PI];
+        }
+
+        function flightAnimationLoop(currentTimestamp) {
+            const dtSeconds = Math.min((currentTimestamp - lastAnimTimestamp) / 1000.0, 0.1);
+            lastAnimTimestamp = currentTimestamp;
+
+            if (dtSeconds > 0) {
+                for (let [tid, obj] of markersMap.entries()) {
+                    if (!obj.targetData || !obj.marker) continue;
+                    const target = obj.targetData;
+
+                    const headingDeg = (target.heading_deg !== undefined && target.heading_deg !== null) ? target.heading_deg : 315.0;
+                    const speedKmh = target.speed_kmh || 185.0;
+                    const speedKms = speedKmh / 3600.0;
+                    const distKm = speedKms * dtSeconds;
+                    const rad = (headingDeg * Math.PI) / 180.0;
+
+                    const dLat = (distKm / 111.0) * Math.cos(rad);
+                    const dLon = (distKm / (111.0 * Math.cos((obj.currentPos[0] * Math.PI) / 180.0))) * Math.sin(rad);
+
+                    if (obj.serverPos) {
+                        const lerpWeight = Math.min(dtSeconds * 2.0, 0.15);
+                        obj.currentPos[0] += (obj.serverPos[0] - obj.currentPos[0]) * lerpWeight + dLat * (1.0 - lerpWeight);
+                        obj.currentPos[1] += (obj.serverPos[1] - obj.currentPos[1]) * lerpWeight + dLon * (1.0 - lerpWeight);
+                        obj.serverPos[0] += dLat;
+                        obj.serverPos[1] += dLon;
+                    } else {
+                        obj.currentPos[0] += dLat;
+                        obj.currentPos[1] += dLon;
+                    }
+
+                    obj.marker.setLatLng(obj.currentPos);
+                    if (obj.vectorLine) {
+                        const forwardPoint = calculateProjectedPoint(obj.currentPos[0], obj.currentPos[1], headingDeg, 25);
+                        obj.vectorLine.setLatLngs([obj.currentPos, forwardPoint]);
+                    }
+                }
+            }
+
+            requestAnimationFrame(flightAnimationLoop);
+        }
+
+        function renderTargetsOnMap(targets) {
+            const countEl = document.getElementById('embed-threats-count');
+            if (countEl) countEl.innerText = targets.length;
+
+            const currentIds = new Set(targets.map(t => t.target_id || t.id));
+
+            for (let [tid, obj] of markersMap.entries()) {
+                if (!currentIds.has(tid)) {
+                    if (obj.marker) map.removeLayer(obj.marker);
+                    if (obj.vectorLine) map.removeLayer(obj.vectorLine);
+                    markersMap.delete(tid);
+                }
+            }
+
+            targets.forEach(target => {
+                const targetId = target.target_id || target.id;
+                const lat = target.current_lat || (target.coordinates ? target.coordinates.lat : 0.0);
+                const lon = target.current_lon || (target.coordinates ? target.coordinates.lon : 0.0);
+                if (lat === 0.0 || lon === 0.0) return;
+
+                const serverLatLng = [lat, lon];
+                const headingDeg = (target.heading_deg !== undefined) ? target.heading_deg : (target.flight ? target.flight.heading_deg : 315.0);
+                const locName = target.current_location_name || (target.location ? target.location.locality : '');
+                const destName = target.destination_name || (target.target ? target.target.destination : '');
+
+                const icon = createCustomMarkerIcon({
+                    target_type: target.target_type || target.type,
+                    heading_deg: headingDeg,
+                    is_circling: target.is_circling || (target.flight && target.flight.is_circling)
+                });
+
+                const forwardPoint = calculateProjectedPoint(lat, lon, headingDeg, 25);
+                const vectorLine = L.polyline([serverLatLng, forwardPoint], {
+                    color: (target.target_type === 'AIRCRAFT' || target.target_type === 'JET_UAV') ? '#00e5ff' : '#ff2a4b',
+                    weight: 2.5,
+                    opacity: 0.8,
+                    dashArray: '4, 4'
+                });
+
+                if (markersMap.has(targetId)) {
+                    const obj = markersMap.get(targetId);
+                    obj.targetData = target;
+                    obj.serverPos = [serverLatLng[0], serverLatLng[1]];
+                    obj.marker.setIcon(icon);
+
+                    if (obj.vectorLine) map.removeLayer(obj.vectorLine);
+                    if (vectorLine) {
+                        vectorLine.addTo(map);
+                        obj.vectorLine = vectorLine;
+                    }
+                } else {
+                    const marker = L.marker(serverLatLng, { icon: icon }).addTo(map);
+                    const destText = destName ? ` ➔ ${destName}` : '';
+                    marker.bindTooltip(`<b>${targetId}</b>: ${target.target_type || target.type} (${locName}${destText})`, {
+                        direction: 'top',
+                        offset: [0, -18],
+                        className: 'radar-tooltip'
+                    });
+
+                    vectorLine.addTo(map);
+
+                    markersMap.set(targetId, {
+                        marker: marker,
+                        vectorLine: vectorLine,
+                        currentPos: [serverLatLng[0], serverLatLng[1]],
+                        serverPos: [serverLatLng[0], serverLatLng[1]],
+                        targetData: target
+                    });
+                }
+            });
+        }
+
+        // Live WebSocket & Data Stream
+        function connectLiveStream() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws`;
+
+            try {
+                const ws = new WebSocket(wsUrl);
+                ws.onmessage = (event) => {
+                    try {
+                        const payload = JSON.parse(event.data);
+                        if (payload.data && payload.data.targets) {
+                            renderTargetsOnMap(payload.data.targets);
+                        }
+                    } catch (_) {}
+                };
+                ws.onclose = () => setTimeout(connectLiveStream, 4000);
+            } catch (_) {}
+
+            // Fallback REST polling
+            setInterval(async () => {
+                try {
+                    const resp = await fetch('/v1/data' + (apiKey ? `?api_key=${encodeURIComponent(apiKey)}` : ''), {
+                        headers: apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {}
+                    });
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        if (data.data) renderTargetsOnMap(data.data);
+                    }
+                } catch (_) {}
+            }, 3000);
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            connectLiveStream();
+            requestAnimationFrame(flightAnimationLoop);
+        });
+    </script>
+</body>
+</html>

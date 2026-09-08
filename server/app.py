@@ -33,6 +33,7 @@ from core.simulator import TacticalSimulator
 from core.neptun_service import NeptunApiService
 from core.turso_db import turso_db
 from core.gemini_service import gemini_analyst
+from core.auth_bot import auth_bot, verify_telegram_widget_auth, pending_auth_sessions, BOT_USERNAME
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("SkyWatch.Server")
@@ -312,11 +313,18 @@ async def startup_event():
     if not tg_connected:
         logger.info("Telegram not authorized yet. Ready for live authorization or manual/simulator injection.")
 
+    # Initialize Telegram Auth Bot for Developer Login
+    try:
+        await auth_bot.start()
+    except Exception as be:
+        logger.warning(f"Auth bot startup notice: {be}")
+
     asyncio.create_task(kinematic_loop())
-    logger.info("SkyWatch Backend Engine v2.0 initialized successfully.")
+    logger.info("SkyWatch Backend Engine v2.1 initialized successfully.")
 
 @app.on_event("shutdown")
 async def shutdown_event():
+    await auth_bot.stop()
     if simulator:
         simulator.stop()
     if neptun_service:
@@ -360,6 +368,24 @@ async def admin_page(key: Optional[str] = None):
 async def developer_portal():
     return FileResponse(os.path.join(UI_DIR, "developer.html"))
 
+# --- EMBEDDABLE MAP WIDGET & IFRAME SDK (/embed/map) ---
+
+@app.get("/embed/map")
+@app.get("/widget/map")
+async def embed_map_widget(response: Response):
+    """Embeddable live radar map for external websites (supports iframes)."""
+    response.headers["X-Frame-Options"] = "ALLOWALL"
+    response.headers["Content-Security-Policy"] = "frame-ancestors *"
+    return FileResponse(os.path.join(UI_DIR, "embed.html"))
+
+@app.get("/embed/skywatch-widget.js")
+@app.get("/skywatch-widget.js")
+async def embed_widget_script(response: Response):
+    """Drop-in 1-line JS SDK for embedding live SkyWatch map into websites."""
+    response.headers["Content-Type"] = "application/javascript; charset=utf-8"
+    response.headers["Cache-Control"] = "public, max-age=86400"
+    return FileResponse(os.path.join(UI_DIR, "skywatch-widget.js"))
+
 class DeveloperAuthRequest(BaseModel):
     telegram_id: str
     first_name: Optional[str] = ""
@@ -378,6 +404,65 @@ async def developer_auth(req: DeveloperAuthRequest):
         photo_url=req.photo_url or ""
     )
     return {"status": "ok", "api_key": user["api_key"], "username": user.get("username"), "telegram_id": user["telegram_id"]}
+
+@app.post("/api/dev/create-auth-session")
+async def create_auth_session():
+    """Creates a temporary 1-click auth session for @skywatchlogin_bot."""
+    import secrets
+    code = secrets.token_hex(8)
+    pending_auth_sessions[code] = {
+        "verified": False,
+        "api_key": None,
+        "timestamp": time.time()
+    }
+    # Clean up old sessions (> 10 mins)
+    now = time.time()
+    for c in list(pending_auth_sessions.keys()):
+        if now - pending_auth_sessions[c].get("timestamp", 0) > 600:
+            del pending_auth_sessions[c]
+
+    return {
+        "status": "ok",
+        "session_code": code,
+        "bot_username": BOT_USERNAME,
+        "bot_url": f"https://t.me/{BOT_USERNAME}?start=auth_{code}"
+    }
+
+@app.get("/api/dev/check-auth-session")
+async def check_auth_session(code: str):
+    """Checks if developer has pressed Start in @skywatchlogin_bot."""
+    sess = pending_auth_sessions.get(code)
+    if not sess:
+        return {"verified": False, "expired": True}
+    if sess.get("verified"):
+        return {
+            "verified": True,
+            "api_key": sess["api_key"],
+            "username": sess["username"],
+            "telegram_id": sess["telegram_id"]
+        }
+    return {"verified": False}
+
+@app.post("/api/dev/telegram-widget-auth")
+async def telegram_widget_auth(request: Request):
+    """Verifies HMAC signature from official Telegram Login Widget."""
+    data = await request.json()
+    if not verify_telegram_widget_auth(data):
+        raise HTTPException(status_code=400, detail="Недійсний цифровий підпис Telegram")
+
+    user = await turso_db.register_or_get_api_user(
+        telegram_id=str(data["id"]),
+        first_name=data.get("first_name", ""),
+        last_name=data.get("last_name", ""),
+        username=data.get("username", f"user_{data['id']}"),
+        photo_url=data.get("photo_url", "")
+    )
+    return {
+        "status": "ok",
+        "api_key": user["api_key"],
+        "username": user.get("username"),
+        "telegram_id": user["telegram_id"]
+    }
 
 class DeveloperRegenRequest(BaseModel):
     telegram_id: str

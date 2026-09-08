@@ -273,17 +273,40 @@
             </div>
 
             <!-- Telegram Registration / Login Card (Shown when not logged in) -->
-            <div id="dev-telegram-login-box" style="display: block; background: #06090e; padding: 20px; border-radius: 4px; border: 1px dashed #00e5ff;">
+            <div id="dev-telegram-login-box" style="display: block; background: #06090e; padding: 22px; border-radius: 4px; border: 1px dashed #00e5ff;">
                 <div style="font-weight: 800; color: #00e5ff; font-size: 13px; margin-bottom: 8px;">
-                    📲 ВХІД ЧЕРЕЗ TELEGRAM ДЛЯ ОТРИМАННЯ API КЛЮЧА
+                    📲 АВТОРИЗАЦІЯ ЧЕРЕЗ TELEGRAM ДЛЯ ОТРИМАННЯ API КЛЮЧА
                 </div>
-                <div style="font-size: 11.5px; color: #c3ced9; margin-bottom: 14px; line-height: 1.5;">
-                    Щоб згенерувати особистий ключ <code>sk-live-...</code> і отримати доступ до даних радара, введіть ваш Telegram @username або ID. Ваш акаунт буде зареєстровано в хмарній базі Turso:
+                <div style="font-size: 11.5px; color: #c3ced9; margin-bottom: 16px; line-height: 1.5;">
+                    Оберіть зручний спосіб входу. Ваш акаунт буде зареєстровано в хмарній базі Turso, після чого ви отримаєте персональний ключ <code>sk-live-...</code>:
                 </div>
-                <form id="form-dev-tg-register" style="display: flex; flex-wrap: wrap; gap: 8px;">
-                    <input type="text" id="input-dev-tg" class="hud-input" placeholder="Ваш @username або Telegram ID (напр. @my_bot_dev)" required style="max-width: 380px;">
-                    <button type="submit" class="hud-btn highlight" style="font-weight: 800;" id="btn-dev-register">🚀 УВІЙТИ ТА ОТРИМАТИ API КЛЮЧ</button>
-                </form>
+
+                <!-- Method 1: 1-Click Bot Authentication -->
+                <div style="background: #101722; padding: 14px; border-radius: 4px; border: 1px solid #1a2738; margin-bottom: 14px;">
+                    <div style="font-size: 11px; font-weight: 700; color: #00ff88; margin-bottom: 6px;">
+                        🤖 СПОСІБ 1: ВХІД В 1 КЛІК ЧЕРЕЗ ОФІЦІЙНОГО БОТА (@skywatchlogin_bot)
+                    </div>
+                    <div style="font-size: 11px; color: #a0aec0; margin-bottom: 10px;">
+                        Натисніть кнопку, перейдіть у Telegram та натисніть <b>START</b>. Ключ з'явиться тут автоматично:
+                    </div>
+                    <button type="button" class="hud-btn highlight" style="font-weight: 800; padding: 10px 18px; font-size: 12px;" id="btn-bot-auth" onclick="startBotAuth()">
+                        🤖 ВІДКРИТИ БОТА @skywatchlogin_bot ТА УВІЙТИ
+                    </button>
+                    <div id="bot-auth-waiting" class="sync-status" style="display: none; background: rgba(0,229,255,0.1); color: #00e5ff; border: 1px solid #00e5ff; margin-top: 10px;">
+                        ⏳ Очікуємо натискання кнопки START у Telegram-боті... (після натискання екран оновиться автоматично)
+                    </div>
+                </div>
+
+                <!-- Method 2: Direct Username / ID -->
+                <div style="background: #101722; padding: 14px; border-radius: 4px; border: 1px solid #1a2738;">
+                    <div style="font-size: 11px; font-weight: 700; color: #ff9100; margin-bottom: 6px;">
+                        ⚡ СПОСІБ 2: ШВИДКА РЕЄСТРАЦІЯ ЗА @USERNAME АБО TELEGRAM ID
+                    </div>
+                    <form id="form-dev-tg-register" style="display: flex; flex-wrap: wrap; gap: 8px;">
+                        <input type="text" id="input-dev-tg" class="hud-input" placeholder="Введіть ваш @username або Telegram ID" required style="max-width: 360px;">
+                        <button type="submit" class="hud-btn highlight" style="font-weight: 800;" id="btn-dev-register">🚀 ОТРИМАТИ КЛЮЧ SK-LIVE</button>
+                    </form>
+                </div>
             </div>
         </div>
 
@@ -300,6 +323,70 @@
                 <span id="api-latency-meter" style="align-self: center; font-size: 11px; color: #00ff88;"></span>
             </div>
             <pre class="code-block" id="api-test-response" style="max-height: 320px; overflow-y: auto; border-top: 1px solid #1a2738;">// Натисніть кнопку вище для перегляду живої відповіді API...</pre>
+        </div>
+
+        <!-- Embed Map & Widget SDK Section -->
+        <div class="doc-section">
+            <h2>🖼️ ВБУДОВУВАННЯ ЖИВОЇ КАРТИ НА ВЛАСНИЙ САЙТ (IFRAME & WIDGET SDK)</h2>
+            <div style="font-size: 12px; color: #a0aec0;">
+                Впроваджуйте інтерактивну карту повітряної обстановки в реальному часі на свій сайт за 1 хвилину через <code>&lt;iframe&gt;</code> або легкий JavaScript SDK:
+            </div>
+
+            <!-- Embed Options Customizer -->
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; background: #080d14; padding: 14px; border-radius: 6px; border: 1px solid #1a2738;">
+                <div>
+                    <label style="font-size: 10px; color: #6b7a8d; display: block; margin-bottom: 4px;">Тема карти:</label>
+                    <select id="embed-opt-theme" class="hud-input" onchange="updateEmbedSnippets()">
+                        <option value="dark">Google Dark (Темна)</option>
+                        <option value="satellite">Google Satellite (Супутник)</option>
+                        <option value="contrast">Google Terrain (Рельєф)</option>
+                        <option value="esriDark">Esri Dark Canvas</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="font-size: 10px; color: #6b7a8d; display: block; margin-bottom: 4px;">Шапка з лічильником:</label>
+                    <select id="embed-opt-hud" class="hud-input" onchange="updateEmbedSnippets()">
+                        <option value="false">Вимкнено (Чиста карта)</option>
+                        <option value="true">Увімкнено (Компактний HUD)</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="font-size: 10px; color: #6b7a8d; display: block; margin-bottom: 4px;">Висота блоку:</label>
+                    <input type="text" id="embed-opt-height" class="hud-input" value="600px" oninput="updateEmbedSnippets()">
+                </div>
+            </div>
+
+            <!-- Embed Code Tabs -->
+            <div class="code-tabs">
+                <button class="code-tab active" onclick="switchEmbedTab('iframe')">HTML &lt;iframe&gt;</button>
+                <button class="code-tab" onclick="switchEmbedTab('sdk')">JavaScript SDK</button>
+                <button class="code-tab" onclick="switchEmbedTab('preview')">👁️ Live Попередній перегляд</button>
+            </div>
+
+            <!-- iFrame Snippet -->
+            <div id="embed-code-iframe" class="code-block">
+                <button class="copy-code-btn" onclick="copySnippet('embed-iframe-text')">Копіювати iFrame</button>
+                <pre id="embed-iframe-text">&lt;iframe src="https://ua-skywatch.pp.ua/embed/map" width="100%" height="600px" frameborder="0" style="border: 1px solid #1a2738; border-radius: 6px;" allowfullscreen&gt;&lt;/iframe&gt;</pre>
+            </div>
+
+            <!-- JS SDK Snippet -->
+            <div id="embed-code-sdk" class="code-block" style="display: none;">
+                <button class="copy-code-btn" onclick="copySnippet('embed-sdk-text')">Копіювати Script</button>
+                <pre id="embed-sdk-text">&lt;!-- 1. Контейнер для карти --&gt;
+&lt;div id="skywatch-radar" style="width: 100%; height: 600px;"&gt;&lt;/div&gt;
+
+&lt;!-- 2. Скрипт віджета --&gt;
+&lt;script src="https://ua-skywatch.pp.ua/embed/skywatch-widget.js" 
+        data-api-key="sk-live-..." 
+        data-target="skywatch-radar" 
+        data-theme="dark" 
+        data-hud="false"&gt;&lt;/script&gt;</pre>
+            </div>
+
+            <!-- Live Preview -->
+            <div id="embed-code-preview" class="code-block" style="display: none; padding: 10px;">
+                <iframe id="embed-live-iframe" src="/embed/map" width="100%" height="450px" frameborder="0" style="border: 1px solid #1a2738; border-radius: 6px;"></iframe>
+            </div>
         </div>
 
         <!-- Quick Code Examples -->
@@ -481,6 +568,47 @@ getAirspaceData();</pre>
                 document.querySelectorAll('.snippet-key').forEach(el => el.innerText = "sk-live-ВАШ_КЛЮЧ");
             }
             document.querySelectorAll('.snippet-url').forEach(el => el.innerText = `${origin}/v1/data`);
+            updateEmbedSnippets();
+        }
+
+        function updateEmbedSnippets() {
+            const origin = window.location.origin || "https://ua-skywatch.pp.ua";
+            const theme = document.getElementById('embed-opt-theme')?.value || 'dark';
+            const hud = document.getElementById('embed-opt-hud')?.value || 'false';
+            const height = document.getElementById('embed-opt-height')?.value || '600px';
+            const key = currentApiKey || 'sk-live-ВАШ_КЛЮЧ';
+
+            const embedUrl = `${origin}/embed/map?api_key=${key}&theme=${theme}&hud=${hud}`;
+            
+            const iframeSnippet = `<iframe src="${embedUrl}" width="100%" height="${height}" frameborder="0" style="border: 1px solid #1a2738; border-radius: 6px;" allowfullscreen></iframe>`;
+            const iframeTextEl = document.getElementById('embed-iframe-text');
+            if (iframeTextEl) iframeTextEl.innerText = iframeSnippet;
+
+            const sdkSnippet = `<!-- 1. Контейнер для карти -->
+<div id="skywatch-radar" style="width: 100%; height: ${height};"></div>
+
+<!-- 2. Скрипт віджета -->
+<script src="${origin}/embed/skywatch-widget.js" 
+        data-api-key="${key}" 
+        data-target="skywatch-radar" 
+        data-theme="${theme}" 
+        data-hud="${hud}"></script>`;
+            const sdkTextEl = document.getElementById('embed-sdk-text');
+            if (sdkTextEl) sdkTextEl.innerText = sdkSnippet;
+
+            const previewIframe = document.getElementById('embed-live-iframe');
+            if (previewIframe) {
+                previewIframe.src = `/embed/map?api_key=${key}&theme=${theme}&hud=${hud}`;
+            }
+        }
+
+        function switchEmbedTab(tab) {
+            document.querySelectorAll('.code-tabs button[onclick^="switchEmbedTab"]').forEach(b => b.classList.remove('active'));
+            event.target.classList.add('active');
+
+            document.getElementById('embed-code-iframe').style.display = tab === 'iframe' ? 'block' : 'none';
+            document.getElementById('embed-code-sdk').style.display = tab === 'sdk' ? 'block' : 'none';
+            document.getElementById('embed-code-preview').style.display = tab === 'preview' ? 'block' : 'none';
         }
 
         function logoutDev() {
@@ -561,6 +689,71 @@ getAirspaceData();</pre>
                 }
             } catch (e) {
                 alert("Помилка генерації ключа: " + e);
+            }
+        }
+
+        let botAuthPollTimer = null;
+
+        async function startBotAuth() {
+            const btn = document.getElementById('btn-bot-auth');
+            const waitDiv = document.getElementById('bot-auth-waiting');
+
+            if (btn) btn.disabled = true;
+            if (waitDiv) waitDiv.style.display = 'block';
+
+            try {
+                const resp = await fetch('/api/dev/create-auth-session', { method: 'POST' });
+                const data = await resp.json();
+                
+                if (data.status === 'ok' && data.bot_url) {
+                    // Open Telegram Bot in new window / app
+                    window.open(data.bot_url, '_blank');
+
+                    // Poll for verification
+                    if (botAuthPollTimer) clearInterval(botAuthPollTimer);
+                    botAuthPollTimer = setInterval(async () => {
+                        try {
+                            const checkResp = await fetch(`/api/dev/check-auth-session?code=${data.session_code}`);
+                            const checkData = await checkResp.json();
+                            
+                            if (checkData.verified && checkData.api_key) {
+                                clearInterval(botAuthPollTimer);
+                                currentApiKey = checkData.api_key;
+                                currentTgUser = checkData.username || checkData.telegram_id;
+                                localStorage.setItem("skywatch_dev_api_key", currentApiKey);
+                                localStorage.setItem("skywatch_dev_user", currentTgUser);
+                                updateKeyDisplay();
+                                if (waitDiv) waitDiv.style.display = 'none';
+                                alert(`✅ Успішний вхід через Telegram! Вітаємо, @${currentTgUser}!`);
+                            }
+                        } catch (_) {}
+                    }, 1500);
+                }
+            } catch (e) {
+                alert("Помилка зв'язку з ботом: " + e);
+                if (btn) btn.disabled = false;
+            }
+        }
+
+        // Official Telegram Login Widget Callback
+        async function onTelegramAuth(user) {
+            try {
+                const resp = await fetch('/api/dev/telegram-widget-auth', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(user)
+                });
+                const data = await resp.json();
+                if (data.status === 'ok' && data.api_key) {
+                    currentApiKey = data.api_key;
+                    currentTgUser = data.username || String(user.id);
+                    localStorage.setItem("skywatch_dev_api_key", currentApiKey);
+                    localStorage.setItem("skywatch_dev_user", currentTgUser);
+                    updateKeyDisplay();
+                    alert(`✅ Успішний вхід через Telegram! Вітаємо, @${currentTgUser}!`);
+                }
+            } catch (err) {
+                alert("Помилка авторизації віджета: " + err);
             }
         }
 
