@@ -34,6 +34,7 @@ from core.neptun_service import NeptunApiService
 from core.turso_db import turso_db
 from core.gemini_service import gemini_analyst
 from core.auth_bot import auth_bot, verify_telegram_widget_auth, pending_auth_sessions, pin_to_user_map, BOT_USERNAME
+from core.alerts_service import alerts_service
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("SkyWatch.Server")
@@ -82,12 +83,13 @@ class ConnectionManager:
         connected_clients.add(websocket)
         logger.info(f"WebSocket client connected. Active clients: {len(connected_clients)}")
         
-        # Send initial state snapshot with recent logs
+        # Send initial state snapshot with recent logs & live alerts
         targets = [t.model_dump() for t in deduplicator.get_all_active()]
         channels = db.get_all_channels()
         tg_status = telegram_service.get_status() if telegram_service else {}
         sim_status = simulator.is_running if simulator else False
         recent_logs = db.get_recent_logs(150)
+        alerts_summary = alerts_service.get_summary()
         
         await websocket.send_json({
             "type": "INITIAL_STATE",
@@ -97,6 +99,7 @@ class ConnectionManager:
                 "telegram": tg_status,
                 "simulator_active": sim_status,
                 "logs": recent_logs,
+                "alerts": alerts_summary,
                 "config": {
                     "bounds": config.UKRAINE_BOUNDS,
                     "center": config.UKRAINE_CENTER,
@@ -273,16 +276,21 @@ async def kinematic_loop():
         active = deduplicator.advance_kinematics(dt_seconds=1.0)
         expired = deduplicator.cleanup_expired()
         
-        if active or expired:
-            targets_dump = [t.model_dump() for t in deduplicator.get_all_active()]
-            await ConnectionManager.broadcast({
-                "type": "KINEMATIC_TICK",
-                "data": {
-                    "targets": targets_dump,
-                    "expired_ids": expired
-                },
-                "timestamp": time.time()
-            })
+        # Update live air raid alert states based on active radar targets
+        all_active_targets = deduplicator.get_all_active()
+        alerts_service.update_from_active_threats(all_active_targets)
+        alerts_summary = alerts_service.get_summary()
+
+        targets_dump = [t.model_dump() for t in all_active_targets]
+        await ConnectionManager.broadcast({
+            "type": "KINEMATIC_TICK",
+            "data": {
+                "targets": targets_dump,
+                "expired_ids": expired,
+                "alerts": alerts_summary
+            },
+            "timestamp": time.time()
+        })
 
 @app.on_event("startup")
 async def startup_event():
@@ -299,6 +307,12 @@ async def startup_event():
     simulator = TacticalSimulator(message_callback=on_message_received)
     neptun_service = NeptunApiService(event_callback=on_neptun_event_received, snapshot_callback=on_neptun_snapshot_received)
     
+    # Start live air alerts service
+    try:
+        await alerts_service.start()
+    except Exception as ae:
+        logger.warning(f"Alerts service startup notice: {ae}")
+
     # Auto-start additional source (Neptun) if persisted as enabled in Turso / settings
     try:
         nep_saved = await turso_db.get_setting("neptun_enabled") or db.get_setting("neptun_enabled", "false")
@@ -325,6 +339,7 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     await auth_bot.stop()
+    await alerts_service.stop()
     if simulator:
         simulator.stop()
     if neptun_service:
@@ -647,6 +662,11 @@ async def get_v1_airspace_data(request: Request):
             "requests_total": user.get("requests_count", 0) + 1
         }
     })
+
+@app.get("/api/alerts")
+async def get_live_alerts():
+    """Returns live Ukrainian air raid alerts summary by Oblast (Drone / Missile)."""
+    return alerts_service.get_summary()
 
 @app.get("/api/maintenance/status")
 async def get_maintenance_status():

@@ -993,6 +993,22 @@ body {
     border: 1px solid #fff;
 }
 
+/* Air Alert GeoJSON Polygon Styles */
+.oblast-border-missile {
+    filter: drop-shadow(0 0 8px rgba(255, 42, 75, 0.7));
+    transition: fill-opacity 0.4s ease, stroke 0.4s ease;
+}
+
+.oblast-border-drone {
+    filter: drop-shadow(0 0 6px rgba(255, 214, 0, 0.6));
+    transition: fill-opacity 0.4s ease, stroke 0.4s ease;
+}
+
+.alert-summary-box {
+    background: rgba(255, 42, 75, 0.08);
+    border: 1px solid rgba(255, 42, 75, 0.35);
+}
+
 .radar-tooltip {
     background: rgba(10, 15, 22, 0.92) !important;
     border: 1px solid var(--color-cyan) !important;

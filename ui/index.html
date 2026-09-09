@@ -59,6 +59,13 @@
                 <span class="stat-label">ТА (СУ-34)</span>
                 <span class="stat-value text-cyan" id="aircraft-count">0</span>
             </div>
+            <div class="stat-box alert-summary-box" id="hud-air-alerts" style="display: none; border-color: rgba(255,42,75,0.4);" title="Статус повітряних тривог по областях України">
+                <span class="stat-label">ТРИВОГИ (ОБЛ)</span>
+                <div style="display: flex; gap: 6px; font-weight: 800; font-size: 13px; font-family: 'Orbitron', sans-serif;">
+                    <span class="text-red" title="Ракетна небезпека / Балістика">🔴 <span id="hud-red-alerts-cnt">0</span></span>
+                    <span class="text-yellow" title="Дронова небезпека / Шахеди">🟡 <span id="hud-yellow-alerts-cnt">0</span></span>
+                </div>
+            </div>
         </div>
 
         <div class="hud-controls">
@@ -309,7 +316,6 @@
                             <span class="sys-name">SKYWATCH C4ISR RADAR</span>
                             <span class="badge-tag">v2.1.0 PROFESSIONAL</span>
                         </div>
-                        <span class="sys-build text-cyan">BUILD: 1450.2026.d4e8c1a-NOT_FULL (від 5.09.2026)</span>
                     </div>
                     <div class="sys-specs-grid">
                         <div class="spec-item"><span class="lbl">ЯДРО ОБРОБКИ:</span> <span class="val text-green">FastAPI + AsyncIO Engine</span></div>
@@ -350,6 +356,10 @@
                     <div class="setting-row">
                         <span>Стрілки векторів напрямку польоту:</span>
                         <input type="checkbox" id="set-vectors-toggle" checked>
+                    </div>
+                    <div class="setting-row">
+                        <span>Підсвітка зон повітряної тривоги (Alerts Overlay 🟡/🔴):</span>
+                        <input type="checkbox" id="set-alerts-toggle" checked>
                     </div>
                 </div>
 
@@ -410,6 +420,6 @@
 
     <!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="/ui/js/app.js?v=2.7.2"></script>
+    <script src="/ui/js/app.js?v=2.7.3"></script>
 </body>
 </html>

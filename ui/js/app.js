@@ -27,12 +27,16 @@ let showHazardCones = true;
 let showRangeRings = true;
 let showTrails = true;
 let showVectors = true;
+let showAlertsOverlay = true;
 let speedMultiplier = 1.0;
 let soundMissileEnabled = true;
 let soundUavEnabled = true;
 let soundKillEnabled = true;
 let isWsConnected = false;
 let pollingInterval = null;
+
+let geojsonOblastsLayer = null;
+let oblastAlertsState = new Map();
 
 const USER_PREFS_KEY = "skywatch_user_prefs_v2";
 
@@ -163,6 +167,7 @@ function initMap() {
     }
 
     createRangeRings();
+    initOblastsGeoJSON();
 
     map.on('mousemove', (e) => {
         const coordsEl = document.getElementById('cursor-coords');
@@ -218,6 +223,142 @@ function toggleRangeRings(enable) {
         if (enable) layer.addTo(map);
         else map.removeLayer(layer);
     });
+}
+
+// Raions GeoJSON & Air Alerts Polygon Styler
+function getOblastStyle(feature) {
+    if (!showAlertsOverlay || !feature || !feature.properties) {
+        return {
+            color: "rgba(0, 229, 255, 0.12)",
+            weight: 1,
+            dashArray: "3, 6",
+            fillColor: "#000000",
+            fillOpacity: 0.0,
+            interactive: true
+        };
+    }
+
+    const rid = feature.properties.id;
+    const alert = oblastAlertsState.get(rid);
+    const level = alert ? alert.level : "NONE";
+
+    if (level === "MISSILE") {
+        // 🔴 Red Alert (Missile / Ballistic / KAB Threat in this Raion)
+        return {
+            color: "#ff2a4b",
+            weight: 2,
+            dashArray: null,
+            fillColor: "#ff2a4b",
+            fillOpacity: 0.22,
+            className: "oblast-border-missile",
+            interactive: true
+        };
+    } else if (level === "DRONE") {
+        // 🟡 Yellow Alert (Drone / Shahed Threat in this Raion)
+        return {
+            color: "#ffd600",
+            weight: 2,
+            dashArray: null,
+            fillColor: "#ffd600",
+            fillOpacity: 0.18,
+            className: "oblast-border-drone",
+            interactive: true
+        };
+    } else {
+        return {
+            color: "rgba(0, 229, 255, 0.12)",
+            weight: 1,
+            dashArray: "3, 6",
+            fillColor: "#000000",
+            fillOpacity: 0.0,
+            interactive: true
+        };
+    }
+}
+
+async function initOblastsGeoJSON() {
+    if (!map) return;
+    try {
+        const resp = await fetch('/ui/data/ukraine_raions.json');
+        if (!resp.ok) return;
+        const data = await resp.json();
+
+        if (geojsonOblastsLayer) {
+            map.removeLayer(geojsonOblastsLayer);
+        }
+
+        geojsonOblastsLayer = L.geoJSON(data, {
+            style: getOblastStyle,
+            onEachFeature: (feature, layer) => {
+                const props = feature.properties || {};
+                const name = props.name || 'Район';
+                const oblast = props.oblast ? ` (${props.oblast})` : '';
+                const rid = props.id;
+
+                layer.on('mouseover', function () {
+                    const alert = oblastAlertsState.get(rid);
+                    const level = alert ? alert.level : 'NONE';
+                    let statusHtml = '<span class="text-green">🟢 Спокійно (Загрози немає)</span>';
+                    if (level === 'MISSILE') {
+                        statusHtml = `<span class="text-red">🔴 РАКЕТНА НЕБЕЗПЕКА (${alert.reason || 'Тривога'})</span>`;
+                    } else if (level === 'DRONE') {
+                        statusHtml = `<span class="text-yellow">🟡 ДРОНОВА НЕБЕЗПЕКА (${alert.reason || 'Загроза БпЛА'})</span>`;
+                    }
+
+                    const tooltipContent = `
+                        <div style="font-family:'JetBrains Mono',monospace; font-size:11px; padding:2px;">
+                            <b style="color:#00e5ff;">${name}${oblast}</b><br>
+                            ${statusHtml}
+                        </div>
+                    `;
+                    layer.bindTooltip(tooltipContent, {
+                        direction: 'top',
+                        className: 'radar-tooltip',
+                        sticky: true
+                    }).openTooltip();
+                });
+            }
+        }).addTo(map);
+
+        if (geojsonOblastsLayer) {
+            geojsonOblastsLayer.bringToBack();
+        }
+    } catch (e) {
+        console.warn('Error loading Raions GeoJSON:', e);
+    }
+}
+
+function updateAlertsOverlay(alertsSummary) {
+    if (!alertsSummary) return;
+
+    const list = alertsSummary.raions || alertsSummary.alerts;
+    if (Array.isArray(list)) {
+        list.forEach(r => {
+            oblastAlertsState.set(r.id, r);
+        });
+    }
+
+    if (geojsonOblastsLayer) {
+        geojsonOblastsLayer.setStyle(getOblastStyle);
+    }
+
+    // Update Top HUD alert indicator badges
+    const redCount = alertsSummary.red_alerts || 0;
+    const yellowCount = alertsSummary.yellow_alerts || 0;
+    
+    const alertHudEl = document.getElementById('hud-air-alerts');
+    const redCntEl = document.getElementById('hud-red-alerts-cnt');
+    const yellowCntEl = document.getElementById('hud-yellow-alerts-cnt');
+
+    if (alertHudEl) {
+        if (redCount > 0 || yellowCount > 0) {
+            alertHudEl.style.display = 'inline-flex';
+            if (redCntEl) redCntEl.innerText = redCount;
+            if (yellowCntEl) yellowCntEl.innerText = yellowCount;
+        } else {
+            alertHudEl.style.display = 'none';
+        }
+    }
 }
 
 // 2. Custom Marker Generator (Individual Unstacked Markers with Cache-Busting)
@@ -684,6 +825,7 @@ function saveUserPreferences() {
             showRangeRings: showRangeRings,
             showTrails: showTrails,
             showVectors: showVectors,
+            showAlertsOverlay: showAlertsOverlay,
             speedMultiplier: speedMultiplier,
             soundMissileEnabled: soundMissileEnabled,
             soundUavEnabled: soundUavEnabled,
@@ -751,6 +893,13 @@ function loadUserPreferences() {
             showVectors = prefs.showVectors;
             const el = document.getElementById('set-vectors-toggle');
             if (el) el.checked = showVectors;
+        }
+
+        if (prefs.showAlertsOverlay !== undefined) {
+            showAlertsOverlay = prefs.showAlertsOverlay;
+            const el = document.getElementById('set-alerts-toggle');
+            if (el) el.checked = showAlertsOverlay;
+            if (geojsonOblastsLayer) geojsonOblastsLayer.setStyle(getOblastStyle);
         }
 
         if (prefs.speedMultiplier !== undefined) {
@@ -864,10 +1013,11 @@ function connectWebSocket() {
                 const urlParams = new URLSearchParams(window.location.search);
                 const hasBypassKey = urlParams.has('key') || urlParams.has('bypass') || window.location.pathname.includes('test-radar');
 
-                const [tResp, mResp, lResp] = await Promise.all([
+                const [tResp, mResp, lResp, aResp] = await Promise.all([
                     fetch('/api/targets'),
                     fetch('/api/maintenance/status'),
-                    fetch('/api/logs?limit=150')
+                    fetch('/api/logs?limit=150'),
+                    fetch('/api/alerts')
                 ]);
                 
                 if (mResp.ok && !hasBypassKey) {
@@ -888,6 +1038,11 @@ function connectWebSocket() {
                             statusEl.className = "stat-value text-green";
                         }
                     }
+                }
+
+                if (aResp.ok) {
+                    const aData = await aResp.json();
+                    updateAlertsOverlay(aData);
                 }
 
                 if (lResp.ok && logCount === 0) {
@@ -939,12 +1094,18 @@ function handleServerMessage(msg) {
             if (msg.data && msg.data.logs) {
                 renderInitialLogs(msg.data.logs);
             }
+            if (msg.data && msg.data.alerts) {
+                updateAlertsOverlay(msg.data.alerts);
+            }
             break;
 
         case "TARGETS_UPDATE":
             if (msg.data && msg.data.targets) {
                 renderTargetsOnMap(msg.data.targets);
                 updateUI(msg.data.targets);
+            }
+            if (msg.data && msg.data.alerts) {
+                updateAlertsOverlay(msg.data.alerts);
             }
             if (msg.data && msg.data.is_new) {
                 soundFx.playNewThreatAlarm();
@@ -958,6 +1119,15 @@ function handleServerMessage(msg) {
             if (msg.data && msg.data.targets) {
                 renderTargetsOnMap(msg.data.targets);
                 updateUI(msg.data.targets);
+            }
+            if (msg.data && msg.data.alerts) {
+                updateAlertsOverlay(msg.data.alerts);
+            }
+            break;
+
+        case "ALERTS_UPDATE":
+            if (msg.data) {
+                updateAlertsOverlay(msg.data);
             }
             break;
 
@@ -1103,6 +1273,12 @@ function setupEventListeners() {
     document.getElementById('set-vectors-toggle')?.addEventListener('change', (e) => {
         showVectors = e.target.checked;
         renderTargetsOnMap(activeTargets);
+        saveUserPreferences();
+    });
+
+    document.getElementById('set-alerts-toggle')?.addEventListener('change', (e) => {
+        showAlertsOverlay = e.target.checked;
+        if (geojsonOblastsLayer) geojsonOblastsLayer.setStyle(getOblastStyle);
         saveUserPreferences();
     });
 
