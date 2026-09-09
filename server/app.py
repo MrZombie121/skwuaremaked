@@ -276,9 +276,8 @@ async def kinematic_loop():
         active = deduplicator.advance_kinematics(dt_seconds=1.0)
         expired = deduplicator.cleanup_expired()
         
-        # Update live air raid alert states based on active radar targets
+        # Broadcast live air raid alert states from official service
         all_active_targets = deduplicator.get_all_active()
-        alerts_service.update_from_active_threats(all_active_targets)
         alerts_summary = alerts_service.get_summary()
 
         targets_dump = [t.model_dump() for t in all_active_targets]

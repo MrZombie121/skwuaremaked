@@ -222,6 +222,7 @@
 
         function updateAlertsOverlay(alertsSummary) {
             if (!alertsSummary) return;
+            oblastAlertsState.clear();
             const list = alertsSummary.raions || alertsSummary.alerts;
             if (Array.isArray(list)) {
                 list.forEach(r => {

@@ -338,6 +338,9 @@ async function initOblastsGeoJSON() {
 function updateAlertsOverlay(alertsSummary) {
     if (!alertsSummary) return;
 
+    // Clear stale state to ensure immediate 100% accurate representation
+    oblastAlertsState.clear();
+
     const list = alertsSummary.raions || alertsSummary.alerts;
     if (Array.isArray(list)) {
         list.forEach(r => {
@@ -570,8 +573,11 @@ function renderTargetsOnMap(targets) {
         if (showVectors) {
             const headingDeg = (target.heading_deg !== undefined && target.heading_deg !== null) ? target.heading_deg : 315.0;
             const forwardPoint = calculateProjectedPoint(target.current_lat, target.current_lon, headingDeg, 25);
+            const vectorColor = (target.target_type === 'AIRCRAFT' || target.target_type === 'JET_UAV') ? '#00e5ff' :
+                                (target.target_type === 'SHAHED' || target.target_type === 'FPV' || target.target_type === 'DECOY') ? '#ff9100' :
+                                (target.target_type === 'KAB') ? '#ffd600' : '#ff2a4b';
             vectorLine = L.polyline([serverLatLng, forwardPoint], {
-                color: (target.target_type === 'AIRCRAFT' || target.target_type === 'JET_UAV') ? '#00e5ff' : '#ff2a4b',
+                color: vectorColor,
                 weight: 3,
                 opacity: 0.85,
                 dashArray: '4, 4'
@@ -580,9 +586,15 @@ function renderTargetsOnMap(targets) {
 
         // Danger Hazard Fan Polygon
         if (showHazardCones && target.hazard_cone && target.hazard_cone.length > 2) {
+            const coneFill = target.target_type === 'JET_UAV' ? '#00e5ff' :
+                             (target.target_type === 'SHAHED' || target.target_type === 'FPV' || target.target_type === 'DECOY') ? '#ff9100' :
+                             (target.target_type === 'KAB') ? '#ffd600' : '#ff2a4b';
+            const coneStroke = target.target_type === 'JET_UAV' ? 'rgba(0, 229, 255, 0.4)' :
+                               (target.target_type === 'SHAHED' || target.target_type === 'FPV' || target.target_type === 'DECOY') ? 'rgba(255, 145, 0, 0.4)' :
+                               (target.target_type === 'KAB') ? 'rgba(255, 214, 0, 0.4)' : 'rgba(255, 42, 75, 0.4)';
             hazardPolygon = L.polygon(target.hazard_cone, {
-                color: target.target_type === 'JET_UAV' ? 'rgba(0, 229, 255, 0.4)' : 'rgba(255, 42, 75, 0.4)',
-                fillColor: target.target_type === 'JET_UAV' ? '#00e5ff' : '#ff2a4b',
+                color: coneStroke,
+                fillColor: coneFill,
                 fillOpacity: 0.1,
                 weight: 1,
                 dashArray: '2, 4'
