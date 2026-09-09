@@ -225,53 +225,59 @@ function toggleRangeRings(enable) {
     });
 }
 
-// Raions GeoJSON & Air Alerts Polygon Styler
+// Official 136 Raions GeoJSON & Air Alerts Polygon Styler
 function getOblastStyle(feature) {
     if (!showAlertsOverlay || !feature || !feature.properties) {
         return {
-            color: "rgba(0, 229, 255, 0.12)",
-            weight: 1,
-            dashArray: "3, 6",
-            fillColor: "#000000",
+            stroke: false,
+            weight: 0,
+            fill: false,
             fillOpacity: 0.0,
-            interactive: true
+            interactive: false
         };
     }
 
-    const rid = feature.properties.id;
-    const alert = oblastAlertsState.get(rid);
+    const fid = String(feature.properties.fid !== undefined ? feature.properties.fid : (feature.properties.id || ""));
+    const rName = feature.properties.rayon || feature.properties.name || "";
+    const alert = oblastAlertsState.get(fid) || oblastAlertsState.get(rName);
     const level = alert ? alert.level : "NONE";
 
     if (level === "MISSILE") {
-        // 🔴 Red Alert (Missile / Ballistic / KAB Threat in this Raion)
+        // 🔴 Red Alert in this Raion (Missile / Ballistic / KAB)
         return {
+            stroke: true,
             color: "#ff2a4b",
-            weight: 2,
+            weight: 2.5,
             dashArray: null,
+            fill: true,
             fillColor: "#ff2a4b",
-            fillOpacity: 0.22,
+            fillOpacity: 0.28,
             className: "oblast-border-missile",
             interactive: true
         };
     } else if (level === "DRONE") {
-        // 🟡 Yellow Alert (Drone / Shahed Threat in this Raion)
+        // 🟡 Yellow Alert in this Raion (Drone / Shahed)
         return {
+            stroke: true,
             color: "#ffd600",
-            weight: 2,
+            weight: 2.5,
             dashArray: null,
+            fill: true,
             fillColor: "#ffd600",
-            fillOpacity: 0.18,
+            fillOpacity: 0.22,
             className: "oblast-border-drone",
             interactive: true
         };
     } else {
+        // ⚪ FULLY TRANSPARENT FOR REGIONS WITHOUT ACTIVE ALERTS (NO COLOR, NO BORDER)
         return {
-            color: "rgba(0, 229, 255, 0.12)",
-            weight: 1,
-            dashArray: "3, 6",
-            fillColor: "#000000",
+            stroke: false,
+            weight: 0,
+            color: "transparent",
+            fill: false,
+            fillColor: "transparent",
             fillOpacity: 0.0,
-            interactive: true
+            interactive: false
         };
     }
 }
@@ -291,14 +297,15 @@ async function initOblastsGeoJSON() {
             style: getOblastStyle,
             onEachFeature: (feature, layer) => {
                 const props = feature.properties || {};
-                const name = props.name || 'Район';
-                const oblast = props.oblast ? ` (${props.oblast})` : '';
-                const rid = props.id;
+                const name = props.rayon || props.name || 'Район';
+                const fid = String(props.fid !== undefined ? props.fid : (props.id || ""));
 
                 layer.on('mouseover', function () {
-                    const alert = oblastAlertsState.get(rid);
+                    const alert = oblastAlertsState.get(fid) || oblastAlertsState.get(name);
                     const level = alert ? alert.level : 'NONE';
-                    let statusHtml = '<span class="text-green">🟢 Спокійно (Загрози немає)</span>';
+                    if (level === 'NONE') return;
+
+                    let statusHtml = '';
                     if (level === 'MISSILE') {
                         statusHtml = `<span class="text-red">🔴 РАКЕТНА НЕБЕЗПЕКА (${alert.reason || 'Тривога'})</span>`;
                     } else if (level === 'DRONE') {
@@ -307,7 +314,7 @@ async function initOblastsGeoJSON() {
 
                     const tooltipContent = `
                         <div style="font-family:'JetBrains Mono',monospace; font-size:11px; padding:2px;">
-                            <b style="color:#00e5ff;">${name}${oblast}</b><br>
+                            <b style="color:#00e5ff;">${alert.name || name}</b><br>
                             ${statusHtml}
                         </div>
                     `;
@@ -334,7 +341,9 @@ function updateAlertsOverlay(alertsSummary) {
     const list = alertsSummary.raions || alertsSummary.alerts;
     if (Array.isArray(list)) {
         list.forEach(r => {
-            oblastAlertsState.set(r.id, r);
+            if (r.fid !== undefined) oblastAlertsState.set(String(r.fid), r);
+            if (r.id) oblastAlertsState.set(String(r.id), r);
+            if (r.name) oblastAlertsState.set(r.name, r);
         });
     }
 
@@ -363,17 +372,17 @@ function updateAlertsOverlay(alertsSummary) {
 
 // 2. Custom Marker Generator (Individual Unstacked Markers with Cache-Busting)
 function createCustomMarkerIcon(target) {
-    let iconFile = '/markers/shahed.png?v=2.1.0';
+    let iconFile = '/markers/shahed.png?v=2.1.1';
     switch (target.target_type) {
-        case 'AIRCRAFT': iconFile = '/markers/aircraft.png?v=2.1.0'; break;
-        case 'JET_UAV': iconFile = '/markers/rs.png?v=2.1.0'; break;
-        case 'MISSILE': iconFile = '/markers/missile.png?v=2.1.0'; break;
-        case 'BALLISTIC': iconFile = '/markers/ballistic.png?v=2.1.0'; break;
-        case 'KAB': iconFile = '/markers/kab.png?v=2.1.0'; break;
-        case 'RECON': iconFile = '/markers/recon.png?v=2.1.0'; break;
-        case 'FPV': iconFile = '/markers/fpv.png?v=2.1.0'; break;
-        case 'DECOY': iconFile = '/markers/decoy.png?v=2.1.0'; break;
-        default: iconFile = '/markers/shahed.png?v=2.1.0'; break;
+        case 'AIRCRAFT': iconFile = '/markers/aircraft.png?v=2.1.1'; break;
+        case 'JET_UAV': iconFile = '/markers/rs.png?v=2.1.1'; break;
+        case 'MISSILE': iconFile = '/markers/missile.png?v=2.1.1'; break;
+        case 'BALLISTIC': iconFile = '/markers/ballistic.png?v=2.1.1'; break;
+        case 'KAB': iconFile = '/markers/kab.png?v=2.1.1'; break;
+        case 'RECON': iconFile = '/markers/recon.png?v=2.1.1'; break;
+        case 'FPV': iconFile = '/markers/fpv.png?v=2.1.1'; break;
+        case 'DECOY': iconFile = '/markers/decoy.png?v=2.1.1'; break;
+        default: iconFile = '/markers/shahed.png?v=2.1.1'; break;
     }
 
     const rotation = (target.heading_deg !== undefined && target.heading_deg !== null) ? target.heading_deg : 0;

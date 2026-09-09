@@ -41,7 +41,7 @@ def print_banner(host: str, port: int):
     has_session = bool(db.get_setting("session_string"))
 
     print("\n" + "=" * 75)
-    print("  🛰️  SKYWATCH — ТАКТИЧНИЙ ВЕБ-РАДАР ПОВІТРЯНИХ ЗАГРОЗ УКРАЇНИ v2.0")
+    print("  🛰️  SKYWATCH — ТАКТИЧНИЙ ВЕБ-РАДАР ПОВІТРЯНИХ ЗАГРОЗ УКРАЇНИ v2.1.1")
     print("=" * 75)
     print(f"  🌐 Локальний доступ:    http://localhost:{port}")
     if lan_ip != "127.0.0.1" and host in ("0.0.0.0", lan_ip):

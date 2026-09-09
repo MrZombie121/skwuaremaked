@@ -39,7 +39,7 @@ from core.alerts_service import alerts_service
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("SkyWatch.Server")
 
-app = FastAPI(title="SkyWatch Tactical Air Threat Radar", version="2.1.0")
+app = FastAPI(title="SkyWatch Tactical Air Threat Radar", version="2.1.1")
 
 # Enable GZip compression for ultra-fast page load & payload transfer
 app.add_middleware(GZipMiddleware, minimum_size=500)
@@ -292,6 +292,46 @@ async def kinematic_loop():
             "timestamp": time.time()
         })
 
+UPSTREAM_PRODUCTION_URL = os.getenv("UPSTREAM_URL", "https://ua-skywatch.pp.ua")
+
+async def production_upstream_sync_loop():
+    """
+    When running in local dev/test mode, continuously syncs live targets, telegram logs,
+    and alerts from the live production server (https://ua-skywatch.pp.ua) without needing
+    a local Telegram session. This lets you test newly added local UI/JS features with 100% real data!
+    """
+    if "RENDER" in os.environ or os.getenv("IS_PRODUCTION", "false").lower() == "true":
+        return
+
+    logger.info(f"Local test mode: Syncing live threat data from production ({UPSTREAM_PRODUCTION_URL})...")
+    
+    while True:
+        try:
+            async with aiohttp.ClientSession() as session:
+                # 1. Fetch live production targets
+                async with session.get(f"{UPSTREAM_PRODUCTION_URL}/api/targets", timeout=aiohttp.ClientTimeout(total=4)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        prod_targets = data.get("targets", [])
+                        if prod_targets:
+                            # Safely load into local deduplicator
+                            deduplicator.active_targets = {
+                                t["target_id"]: ActiveTarget(**t) for t in prod_targets
+                            }
+
+                # 2. Fetch live production logs
+                async with session.get(f"{UPSTREAM_PRODUCTION_URL}/api/logs?limit=100", timeout=aiohttp.ClientTimeout(total=4)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        prod_logs = data.get("logs", [])
+                        if prod_logs:
+                            db._write_json(os.path.join(db.data_dir, "messages_log.json"), prod_logs)
+
+        except Exception as e:
+            logger.debug(f"Upstream sync notice: {e}")
+
+        await asyncio.sleep(2.5)
+
 @app.on_event("startup")
 async def startup_event():
     global telegram_service, simulator, neptun_service
@@ -334,6 +374,7 @@ async def startup_event():
         logger.warning(f"Auth bot startup notice: {be}")
 
     asyncio.create_task(kinematic_loop())
+    asyncio.create_task(production_upstream_sync_loop())
     logger.info("SkyWatch Backend Engine v2.1 initialized successfully.")
 
 @app.on_event("shutdown")
@@ -727,6 +768,35 @@ async def get_gemini_key(key: Optional[str] = None):
     saved_k = db.get_setting("gemini_api_key") or os.getenv("GEMINI_API_KEY", "")
     return {"gemini_key": saved_k}
 
+class AlertsSaveKeyRequest(BaseModel):
+    key: str
+    alerts_api_key: str
+
+@app.post("/api/admin/alerts/save-key")
+async def save_alerts_key(req: AlertsSaveKeyRequest):
+    expected_key = db.get_setting("admin_secret_key") or config.ADMIN_SECRET_KEY
+    if req.key != expected_key:
+        raise HTTPException(status_code=403, detail="Доступ заборонено")
+    
+    clean_k = req.alerts_api_key.strip()
+    db.set_setting("alerts_api_key", clean_k)
+    try:
+        await turso_db.set_setting("alerts_api_key", clean_k)
+    except Exception:
+        pass
+    # Force immediate refresh
+    asyncio.create_task(alerts_service.fetch_external_alerts())
+    return {"status": "ok", "saved": True}
+
+@app.get("/api/admin/alerts/get-key")
+async def get_alerts_key(key: Optional[str] = None):
+    expected_key = db.get_setting("admin_secret_key") or config.ADMIN_SECRET_KEY
+    if key != expected_key:
+        raise HTTPException(status_code=403, detail="Доступ заборонено")
+    
+    saved_k = await turso_db.get_setting("alerts_api_key") or db.get_setting("alerts_api_key") or os.getenv("ALERTS_API_KEY", "")
+    return {"alerts_api_key": saved_k}
+
 @app.post("/api/admin/maintenance")
 async def toggle_maintenance_mode(req: MaintenanceToggleRequest):
     expected_key = db.get_setting("admin_secret_key") or config.ADMIN_SECRET_KEY
@@ -755,7 +825,7 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "SkyWatch",
-        "version": "2.1.0",
+        "version": "2.1.1",
         "timestamp": time.time(),
         "telegram_connected": telegram_service.is_connected if telegram_service else False,
         "active_targets": len(deduplicator.get_all_active()),

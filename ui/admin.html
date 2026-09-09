@@ -385,6 +385,26 @@
 
                 <textarea id="ai-report-output" class="reason-input" rows="8" style="display: none; background: #06090e; font-size: 12px; line-height: 1.6; border-color: #b042ff; white-space: pre-wrap;" placeholder="Тут з'явиться готове зведення..."></textarea>
             </div>
+
+            <!-- 6. Alerts API Key & Stream (alerts.in.ua) -->
+            <div class="admin-card" style="border-top: 3px solid #ffd600; grid-column: 1 / -1;">
+                <div class="card-title">
+                    <span>🚨 ОФІЦІЙНИЙ СТРІМ ТРИВОГ (ALERTS.IN.UA)</span>
+                    <span class="status-badge" style="background: rgba(255,214,0,0.15); color: #ffd600; border: 1px solid #ffd600;">ALERTS API LIVE</span>
+                </div>
+
+                <div style="font-size: 11px; color: #c3ced9; line-height: 1.5;">
+                    Потік тривог за офіційними 136 районами України (🟡 Дронові / 🔴 Ракетні). Ключ імпортується та синхронізується з <b>Turso Cloud DB</b>. Райони без тривоги 100% прозорі.
+                </div>
+
+                <div>
+                    <label style="font-size: 10px; color: #6b7a8d; display: block; margin-bottom: 4px;">Ключ API (alerts.in.ua):</label>
+                    <div style="display: flex; gap: 8px;">
+                        <input type="password" id="alerts-api-key-input" class="hud-input" placeholder="Введіть токен alerts.in.ua" style="flex: 1;">
+                        <button type="button" class="hud-btn highlight" onclick="saveAlertsApiKey()">💾 ЗБЕРЕГТИ В TURSO</button>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -495,7 +515,6 @@
                     const chData = await chResp.json();
                     const countEl = document.getElementById('tg-channels-count');
                     const folderInput = document.getElementById('admin-folder-url');
-                    
                     const count = chData.channels ? chData.channels.length : 0;
                     if (countEl) countEl.innerText = count;
                     if (folderInput && chData.folder_url && !folderInput.matches(':focus')) {
@@ -504,6 +523,20 @@
                 }
             } catch (e) {
                 console.warn("Channels count fetch error:", e);
+            }
+
+            // 6. Alerts API Key
+            try {
+                const aResp = await fetch(`/api/admin/alerts/get-key?key=${encodeURIComponent(secretKey)}`);
+                if (aResp.ok) {
+                    const aData = await aResp.json();
+                    const aKeyInput = document.getElementById('alerts-api-key-input');
+                    if (aKeyInput && aData.alerts_api_key && !aKeyInput.matches(':focus')) {
+                        aKeyInput.value = aData.alerts_api_key;
+                    }
+                }
+            } catch (e) {
+                console.warn("Alerts key fetch error:", e);
             }
         }
 
@@ -833,6 +866,25 @@
             } finally {
                 btn.disabled = false;
                 btn.innerText = "🧠 ПІДСУМУВАТИ ЗВІТ / СФОРМУВАТИ ЗВЕДЕННЯ";
+            }
+        }
+
+        async function saveAlertsApiKey() {
+            const keyInput = document.getElementById('alerts-api-key-input');
+            if (!keyInput) return;
+            const alertsKey = keyInput.value.trim();
+            try {
+                const resp = await fetch('/api/admin/alerts/save-key', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ key: secretKey, alerts_api_key: alertsKey })
+                });
+                const data = await resp.json();
+                if (data.status === 'ok') {
+                    alert("✅ Ключ alerts.in.ua успішно збережено в базі Turso!");
+                }
+            } catch (e) {
+                alert("❌ Помилка збереження: " + e);
             }
         }
 
