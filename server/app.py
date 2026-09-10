@@ -348,6 +348,7 @@ async def startup_event():
     
     # Start live air alerts service
     try:
+        alerts_service.set_threats_provider(lambda: deduplicator.get_all_active())
         await alerts_service.start()
     except Exception as ae:
         logger.warning(f"Alerts service startup notice: {ae}")
