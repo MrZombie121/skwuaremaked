@@ -808,14 +808,8 @@ function renderTargetDetail(tgt) {
     }
 }
 
-// 7. Append Log to Terminal
+// 7. Append Log to Terminal (Fixed FIFO Buffer max 150 msgs)
 function appendTerminalLog(logData) {
-    logCount++;
-    const counterEl = document.getElementById('log-counter');
-    const mobLogBadge = document.getElementById('mobile-log-badge');
-    if (counterEl) counterEl.innerText = `${logCount} msgs`;
-    if (mobLogBadge) mobLogBadge.innerText = `${logCount}`;
-
     const terminal = document.getElementById('terminal-logs');
     if (!terminal) return;
 
@@ -830,9 +824,16 @@ function appendTerminalLog(logData) {
     `;
     terminal.insertBefore(entry, terminal.firstChild);
 
+    // Keep FIFO buffer strictly capped at max 150 messages: pop excess oldest messages from bottom
     while (terminal.children.length > 150) {
         terminal.removeChild(terminal.lastChild);
     }
+
+    logCount = terminal.children.length;
+    const counterEl = document.getElementById('log-counter');
+    const mobLogBadge = document.getElementById('mobile-log-badge');
+    if (counterEl) counterEl.innerText = `${logCount} msgs`;
+    if (mobLogBadge) mobLogBadge.innerText = `${logCount}`;
 }
 
 // LocalStorage User Preferences Manager
@@ -1083,13 +1084,15 @@ function renderInitialLogs(logs) {
     if (!terminal) return;
 
     terminal.innerHTML = '';
-    logCount = logs.length;
+    const sliceLogs = logs.slice(0, 150);
+    logCount = sliceLogs.length;
+
     const counterEl = document.getElementById('log-counter');
     const mobLogBadge = document.getElementById('mobile-log-badge');
     if (counterEl) counterEl.innerText = `${logCount} msgs`;
     if (mobLogBadge) mobLogBadge.innerText = `${logCount}`;
 
-    logs.forEach(log => {
+    sliceLogs.forEach(log => {
         const entry = document.createElement('div');
         entry.className = `log-entry ${log.is_threat ? 'parsed' : ''}`;
         const timeStr = log.timestamp ? new Date(log.timestamp * 1000).toLocaleTimeString('uk-UA', { timeZone: 'Europe/Kyiv' }) : 'LOG';

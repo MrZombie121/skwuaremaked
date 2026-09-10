@@ -1,17 +1,20 @@
 """
 Live Air Raid Alerts Service for SkyWatch Tactical Radar
 Integrates with alerts.in.ua (alarms.in.ua) via key dynamically retrieved from Turso Cloud DB.
+Periodically queries alerts.in.ua every 30 seconds.
 Classifies all 136 Official Ukrainian Raions (ADM2) into:
 - NONE: 100% Fully Transparent (No color, no borders, 0 opacity)
-- DRONE (🟡 Yellow Alert): Drone / Shahed Danger in this specific Raion
-- MISSILE (🔴 Red Alert): Missile / Ballistic / Air Raid in this specific Raion
+- DRONE (🟡 Yellow Alert): Drone / Shahed Danger directly from alerts.in.ua
+- MISSILE (🔴 Red Alert): Missile / Ballistic / Air Raid directly from alerts.in.ua
+
+Alert statuses are 100% driven by official alerts.in.ua data, independently of any flight tracks on the map.
 """
 import asyncio
 import logging
 import os
 import time
 import aiohttp
-from typing import Dict, Any, List, Optional, Set, Tuple, Callable
+from typing import Dict, Any, List, Optional, Set, Tuple
 from pydantic import BaseModel, Field
 
 from core.raions_data import UKRAINE_RAIONS_DATA
@@ -24,7 +27,7 @@ logger = logging.getLogger("SkyWatch.AlertsService")
 # Permanent alert regions (>1000 days under occupation / continuous threat)
 PERMANENT_ALERT_OBLASTS = ("луганська", "автономна республіка крим", "крим")
 
-# Decommunized / renamed raion aliases mapping to 136 standard FIDs
+# Decommunized / renamed raion aliases mapping to standard 136 FIDs
 RAION_ALIASES = {
     "берестинський": "37",   # Красноградський / Берестинський район
     "красноградський": "37",
@@ -53,12 +56,7 @@ class AirAlertsService:
         self.raion_alerts_state: Dict[str, RaionAlertStatus] = {}
         self.is_running = False
         self._task: Optional[asyncio.Task] = None
-        self._threats_provider: Optional[Callable[[], List[Any]]] = None
         self._init_default_states()
-
-    def set_threats_provider(self, provider: Callable[[], List[Any]]):
-        """Sets callback to query live deduplicated radar targets for threat tier classification."""
-        self._threats_provider = provider
 
     def _init_default_states(self):
         now = time.time()
@@ -94,8 +92,8 @@ class AirAlertsService:
 
     def update_from_active_threats(self, active_targets: List[Any]):
         """
-        No-op: Does not generate synthetic alerts ahead of targets.
-        Alerts come 100% from real official alerts.in.ua feed.
+        No-op: Radar targets do NOT modify official raion alert levels.
+        Alerts are 100% driven by official alerts.in.ua API.
         """
         pass
 
@@ -114,7 +112,7 @@ class AirAlertsService:
     def _match_alert_to_raions(self, loc_title: str, loc_oblast: str, loc_raion: str, loc_type: str) -> Set[str]:
         """
         Maps an incoming alerts.in.ua item to matching official 136 raion FIDs.
-        Accurately binds city/hromada alerts to their single containing raion
+        Accurately binds city/hromada/raion alerts to their single containing raion
         WITHOUT blowing up to the entire oblast.
         """
         t_title = (loc_title or "").strip().lower()
@@ -194,78 +192,10 @@ class AirAlertsService:
 
         return matched
 
-    def _determine_threat_level(self, fid_str: str, alert_item: dict, active_targets: List[Any]) -> Tuple[str, str]:
-        """
-        Accurately differentiates DRONE (🟡 Yellow Alert) vs MISSILE (🔴 Red Alert) for each raion.
-        """
-        alert_type = str(alert_item.get("alert_type") or "air_raid").lower().strip()
-        threat_type = str(alert_item.get("threat_type") or "").lower().strip()
-        notes = str(alert_item.get("notes") or "").lower().strip()
-        
-        rdata = UKRAINE_RAIONS_DATA.get(fid_str, {})
-        r_oblast = rdata.get("oblast", "").lower()
-        r_center = rdata.get("center", (49.0, 31.0))
-
-        # 1. Artillery shelling or urban combat -> always MISSILE tier
-        if alert_type in ("artillery_shelling", "urban_fights", "chemical", "nuclear"):
-            return ("MISSILE", "Артилерійський обстріл" if alert_type == "artillery_shelling" else "Бойові дії")
-
-        # 2. Permanent occupied alert zones (Luhansk, Crimea) -> MISSILE tier
-        if any(p in r_oblast for p in ("луган", "крим")):
-            return ("MISSILE", "Тривога понад 1000 днів (Окупована територія)")
-
-        # 3. Direct notes keywords
-        drone_kw = ("шахед", "шахід", "бпла", "дрон", "герань", "uav", "drone", "гербера", "імітатор", "мопед")
-        missile_kw = ("ракета", "балістик", "крилат", "пуск", "х-101", "х-22", "х-59", "х-69", "х-47", "калібр", "іскандер", "кинджал", "ту-95", "ту-22", "міг-31", "каб", "авіаці")
-
-        if any(k in notes for k in missile_kw) or threat_type in ("missile", "ballistic", "kab", "aviation"):
-            return ("MISSILE", "Ракетна небезпека / Балістика")
-        if any(k in notes for k in drone_kw) or threat_type in ("drone", "uav", "shahed") or alert_type == "drone":
-            return ("DRONE", "Загроза ударних БпЛА")
-
-        # 4. Correlate with active radar tracks
-        if active_targets:
-            has_local_missile = False
-            has_local_drone = False
-            has_any_missile = False
-            has_any_drone = False
-
-            for tgt in active_targets:
-                t_type = getattr(tgt, "target_type", None)
-                t_type_str = t_type.value if hasattr(t_type, "value") else str(t_type or "SHAHED")
-                t_lat = getattr(tgt, "current_lat", 0.0)
-                t_lon = getattr(tgt, "current_lon", 0.0)
-                
-                dist = haversine_distance_km(r_center[0], r_center[1], t_lat, t_lon) if (t_lat and t_lon) else 999.0
-
-                if t_type_str in ("MISSILE", "BALLISTIC", "KAB", "AIRCRAFT"):
-                    has_any_missile = True
-                    if dist <= 180.0:
-                        has_local_missile = True
-                elif t_type_str in ("SHAHED", "JET_UAV", "RECON", "FPV", "DECOY"):
-                    has_any_drone = True
-                    if dist <= 180.0:
-                        has_local_drone = True
-
-            if has_local_missile:
-                return ("MISSILE", "Ракетна небезпека / Балістика")
-            if has_local_drone:
-                return ("DRONE", "Загроза ударних БпЛА (Shahed)")
-            if has_any_drone and not has_any_missile:
-                return ("DRONE", "Загроза ударних БпЛА")
-            if has_any_missile:
-                return ("MISSILE", "Ракетна небезпека")
-
-        # Default for air raid during monitoring: DRONE (Yellow)
-        return ("DRONE", "Загроза ударних БпЛА")
-
     async def fetch_external_alerts(self):
-        """Fetches live Ukrainian state alerts from alerts.in.ua and classifies into Yellow/Red."""
+        """Fetches live Ukrainian state alerts from alerts.in.ua API every 30s."""
         api_key = await self._get_active_api_key()
         now = time.time()
-        
-        # Query active radar targets if provider set
-        active_targets = self._threats_provider() if self._threats_provider else []
         
         # Default active raion alerts map with permanent alert regions
         active_raion_alerts: Dict[str, Tuple[str, str, str, Optional[float]]] = {} # fid -> (level, type, reason, started_at)
@@ -288,7 +218,7 @@ class AirAlertsService:
         try:
             headers = {
                 "Authorization": f"Bearer {api_key}",
-                "User-Agent": "Mozilla/5.0 (SkyWatch Radar Engine v2.1)"
+                "User-Agent": "Mozilla/5.0 (SkyWatch Radar Engine v2.1.1)"
             }
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=8)) as resp:
@@ -302,6 +232,23 @@ class AirAlertsService:
                             loc_oblast = str(a.get("location_oblast") or "").strip()
                             loc_type = str(a.get("location_type") or "").strip()
                             alert_type = str(a.get("alert_type") or "air_raid").lower().strip()
+                            alert_level = str(a.get("alert_level") or "").lower().strip()
+                            threats = a.get("threats") or []
+
+                            # Directly extract yellow vs red alert status from alerts.in.ua API
+                            is_yellow = alert_level == "yellow" or any(
+                                str(t.get("level") or "").lower() == "yellow" or 
+                                str(t.get("threat_type") or "").lower() == "drones"
+                                for t in threats
+                            )
+                            is_red = alert_level == "red" or alert_type in ("artillery_shelling", "urban_fights", "chemical", "nuclear")
+
+                            if is_yellow and not is_red:
+                                level = "DRONE"
+                                reason = "Загроза ударних БпЛА (Жовтий рівень)"
+                            else:
+                                level = "MISSILE"
+                                reason = "Повітряна тривога (Червоний рівень)" if alert_type == "air_raid" else "Артилерійський обстріл"
 
                             # Parse start timestamp if available
                             started_at = now
@@ -315,8 +262,6 @@ class AirAlertsService:
                             matched_fids = self._match_alert_to_raions(loc_title, loc_oblast, loc_raion, loc_type)
 
                             for fid_str in matched_fids:
-                                level, reason = self._determine_threat_level(fid_str, a, active_targets)
-                                
                                 # MISSILE tier has higher severity than DRONE tier
                                 if fid_str not in active_raion_alerts or (active_raion_alerts[fid_str][0] == "DRONE" and level == "MISSILE"):
                                     active_raion_alerts[fid_str] = (level, alert_type, reason, started_at)
@@ -377,7 +322,7 @@ class AirAlertsService:
             return
         self.is_running = True
         self._task = asyncio.create_task(self._run_loop())
-        logger.info("Official alerts.in.ua live air defense monitoring service started.")
+        logger.info("Official alerts.in.ua live air defense monitoring service started (30s polling cycle).")
 
     async def stop(self):
         self.is_running = False
@@ -392,7 +337,7 @@ class AirAlertsService:
                 await self.fetch_external_alerts()
             except Exception as e:
                 logger.debug(f"Alerts loop notice: {e}")
-            await asyncio.sleep(10.0)
+            await asyncio.sleep(30.0)
 
 # Global Alerts Service Singleton
 alerts_service = AirAlertsService()
