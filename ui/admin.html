@@ -386,21 +386,21 @@
                 <textarea id="ai-report-output" class="reason-input" rows="8" style="display: none; background: #06090e; font-size: 12px; line-height: 1.6; border-color: #b042ff; white-space: pre-wrap;" placeholder="Тут з'явиться готове зведення..."></textarea>
             </div>
 
-            <!-- 6. Alerts API Key & Stream (alerts.in.ua) -->
+            <!-- 6. Alerts API Key & Stream (UkraineAlarms) -->
             <div class="admin-card" style="border-top: 3px solid #ffd600; grid-column: 1 / -1;">
                 <div class="card-title">
-                    <span>🚨 ОФІЦІЙНИЙ СТРІМ ТРИВОГ (ALERTS.IN.UA)</span>
-                    <span class="status-badge" style="background: rgba(255,214,0,0.15); color: #ffd600; border: 1px solid #ffd600;">ALERTS API LIVE</span>
+                    <span>🚨 ОФІЦІЙНИЙ СТРІМ ТРИВОГ (UKRAINEALARMS)</span>
+                    <span class="status-badge" style="background: rgba(255,214,0,0.15); color: #ffd600; border: 1px solid #ffd600;">UKRAINEALARMS LIVE</span>
                 </div>
 
                 <div style="font-size: 11px; color: #c3ced9; line-height: 1.5;">
-                    Потік тривог за офіційними 136 районами України (🟡 Дронові / 🔴 Ракетні). Ключ імпортується та синхронізується з <b>Turso Cloud DB</b>. Райони без тривоги 100% прозорі.
+                    Потік тривог за офіційними районами областей України (🟡 Жовтий / 🔴 Червоний рівень) через UkraineAlarms API. Опитування кожні 30 секунд.
                 </div>
 
                 <div>
-                    <label style="font-size: 10px; color: #6b7a8d; display: block; margin-bottom: 4px;">Ключ API (alerts.in.ua):</label>
+                    <label style="font-size: 10px; color: #6b7a8d; display: block; margin-bottom: 4px;">Ключ API (UkraineAlarms):</label>
                     <div style="display: flex; gap: 8px;">
-                        <input type="password" id="alerts-api-key-input" class="hud-input" placeholder="Введіть токен alerts.in.ua" style="flex: 1;">
+                        <input type="password" id="alerts-api-key-input" class="hud-input" placeholder="6859f947:..." style="flex: 1;">
                         <button type="button" class="hud-btn highlight" onclick="saveAlertsApiKey()">💾 ЗБЕРЕГТИ В TURSO</button>
                     </div>
                 </div>
@@ -881,7 +881,7 @@
                 });
                 const data = await resp.json();
                 if (data.status === 'ok') {
-                    alert("✅ Ключ alerts.in.ua успішно збережено в базі Turso!");
+                    alert("✅ Ключ UkraineAlarms успішно збережено в базі Turso!");
                 }
             } catch (e) {
                 alert("❌ Помилка збереження: " + e);

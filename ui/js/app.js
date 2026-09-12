@@ -136,14 +136,16 @@ function initMap() {
         attribution: '&copy; Google Maps',
         subdomains: ['0', '1', '2', '3'],
         className: 'google-dark-tactical',
-        maxZoom: 20
+        maxZoom: 20,
+        crossOrigin: true
     });
 
     // Google Maps Satellite Imagery
     baseLayers.satellite = L.tileLayer('https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}&hl=uk', {
         attribution: '&copy; Google Maps Satellite Imagery',
         subdomains: ['0', '1', '2', '3'],
-        maxZoom: 20
+        maxZoom: 20,
+        crossOrigin: true
     });
 
     // Google Maps Terrain / Relief
@@ -151,13 +153,15 @@ function initMap() {
         attribution: '&copy; Google Maps Terrain',
         subdomains: ['0', '1', '2', '3'],
         className: 'google-dark-tactical',
-        maxZoom: 20
+        maxZoom: 20,
+        crossOrigin: true
     });
 
     // Esri Dark Canvas
     baseLayers.esriDark = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
         attribution: '&copy; Esri &copy; DeLorme, HERE',
-        maxZoom: 16
+        maxZoom: 16,
+        crossOrigin: true
     });
 
     if (baseLayers[currentBaseLayer]) {
@@ -375,17 +379,17 @@ function updateAlertsOverlay(alertsSummary) {
 
 // 2. Custom Marker Generator (Individual Unstacked Markers with Cache-Busting)
 function createCustomMarkerIcon(target) {
-    let iconFile = '/markers/shahed.png?v=2.1.1';
+    let iconFile = '/markers/shahed.png?v=2.2.0';
     switch (target.target_type) {
-        case 'AIRCRAFT': iconFile = '/markers/aircraft.png?v=2.1.1'; break;
-        case 'JET_UAV': iconFile = '/markers/rs.png?v=2.1.1'; break;
-        case 'MISSILE': iconFile = '/markers/missile.png?v=2.1.1'; break;
-        case 'BALLISTIC': iconFile = '/markers/ballistic.png?v=2.1.1'; break;
-        case 'KAB': iconFile = '/markers/kab.png?v=2.1.1'; break;
-        case 'RECON': iconFile = '/markers/recon.png?v=2.1.1'; break;
-        case 'FPV': iconFile = '/markers/fpv.png?v=2.1.1'; break;
-        case 'DECOY': iconFile = '/markers/decoy.png?v=2.1.1'; break;
-        default: iconFile = '/markers/shahed.png?v=2.1.1'; break;
+        case 'AIRCRAFT': iconFile = '/markers/aircraft.png?v=2.2.0'; break;
+        case 'JET_UAV': iconFile = '/markers/rs.png?v=2.2.0'; break;
+        case 'MISSILE': iconFile = '/markers/missile.png?v=2.2.0'; break;
+        case 'BALLISTIC': iconFile = '/markers/ballistic.png?v=2.2.0'; break;
+        case 'KAB': iconFile = '/markers/kab.png?v=2.2.0'; break;
+        case 'RECON': iconFile = '/markers/recon.png?v=2.2.0'; break;
+        case 'FPV': iconFile = '/markers/fpv.png?v=2.2.0'; break;
+        case 'DECOY': iconFile = '/markers/decoy.png?v=2.2.0'; break;
+        default: iconFile = '/markers/shahed.png?v=2.2.0'; break;
     }
 
     const rotation = (target.heading_deg !== undefined && target.heading_deg !== null) ? target.heading_deg : 0;
@@ -1174,7 +1178,10 @@ function setupEventListeners() {
     });
 
     // Modals
-    document.getElementById('btn-settings-modal')?.addEventListener('click', () => openModal('modal-settings'));
+    document.getElementById('btn-settings-modal')?.addEventListener('click', () => {
+        updateCacheStats();
+        openModal('modal-settings');
+    });
 
     // Clear All
     document.getElementById('btn-clear')?.addEventListener('click', async () => {
@@ -1257,7 +1264,15 @@ function setupEventListeners() {
     });
 
     document.getElementById('btn-mobile-settings')?.addEventListener('click', () => {
+        updateCacheStats();
         openModal('modal-settings');
+    });
+
+    // PWA Map Tile Cache Management
+    document.getElementById('btn-clear-tile-cache')?.addEventListener('click', () => {
+        if (confirm('Видалити всі збережені офлайн-тайли карти з пам\'яті пристрою?')) {
+            clearMapTileCache();
+        }
     });
 
     // Layer Switcher Buttons
@@ -1352,6 +1367,158 @@ setInterval(() => {
     } catch (e) {}
 }, 1000);
 
+// --- PWA & OFFLINE MAP TILE CACHING ENGINE ---
+let deferredInstallPrompt = null;
+
+function isRunningStandalone() {
+    return (
+        window.matchMedia('(display-mode: standalone)').matches ||
+        window.navigator.standalone === true ||
+        document.referrer.includes('android-app://')
+    );
+}
+
+function isIOS() {
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+}
+
+function initServiceWorker() {
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('/sw.js', { scope: '/' })
+                .then(reg => {
+                    console.log('[PWA] Service Worker registered successfully, scope:', reg.scope);
+                    reg.addEventListener('updatefound', () => {
+                        const newWorker = reg.installing;
+                        if (newWorker) {
+                            newWorker.addEventListener('statechange', () => {
+                                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                    console.log('[PWA] New version installed and ready.');
+                                }
+                            });
+                        }
+                    });
+                    updateCacheStats();
+                })
+                .catch(err => {
+                    console.warn('[PWA] Service Worker registration failed:', err);
+                });
+        });
+    }
+}
+
+function updateCacheStats() {
+    const el = document.getElementById('cache-tiles-stats');
+    if (!el) return;
+
+    if ('caches' in window) {
+        window.caches.keys().then(keys => {
+            const tileKey = keys.find(k => k.includes('map-tiles'));
+            if (tileKey) {
+                return window.caches.open(tileKey).then(cache => cache.keys());
+            }
+            return [];
+        }).then(tileKeys => {
+            if (el) el.innerText = `${tileKeys.length} тайлів збережено (офлайн доступ)`;
+        }).catch(() => {});
+    }
+}
+
+function clearMapTileCache() {
+    if ('caches' in window) {
+        window.caches.keys().then(keys => {
+            const tileKeys = keys.filter(k => k.includes('map-tiles'));
+            return Promise.all(tileKeys.map(k => window.caches.delete(k)));
+        }).then(() => {
+            alert('Кеш тайлів карти успішно очищено!');
+            updateCacheStats();
+        }).catch(err => {
+            alert('Помилка очищення кешу: ' + err);
+        });
+    }
+}
+
+function initPWAInstallation() {
+    const pwaBtnHud = document.getElementById('btn-pwa-install');
+    const pwaBtnSettings = document.getElementById('btn-settings-install');
+    const pwaBanner = document.getElementById('pwa-install-banner');
+    const pwaBannerInstall = document.getElementById('pwa-btn-install');
+    const pwaBannerDismiss = document.getElementById('pwa-btn-dismiss');
+    const pwaStatusBadge = document.getElementById('pwa-status-badge');
+
+    if (isRunningStandalone()) {
+        if (pwaStatusBadge) {
+            pwaStatusBadge.textContent = 'STANDALONE (ДОДАТОК)';
+            pwaStatusBadge.className = 'badge-tag text-green';
+        }
+        if (pwaBtnHud) pwaBtnHud.style.display = 'none';
+        if (pwaBtnSettings) pwaBtnSettings.style.display = 'none';
+        if (pwaBanner) pwaBanner.style.display = 'none';
+        return;
+    }
+
+    // Capture Chrome/Android install prompt
+    window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        deferredInstallPrompt = e;
+
+        if (pwaBtnHud) pwaBtnHud.style.display = 'inline-flex';
+        if (pwaBtnSettings) pwaBtnSettings.style.display = 'inline-flex';
+
+        const dismissed = sessionStorage.getItem('skywatch_pwa_dismissed');
+        if (!dismissed && pwaBanner) {
+            pwaBanner.style.display = 'flex';
+        }
+    });
+
+    const triggerInstall = async () => {
+        if (deferredInstallPrompt) {
+            deferredInstallPrompt.prompt();
+            const choice = await deferredInstallPrompt.userChoice;
+            if (choice && choice.outcome === 'accepted') {
+                console.log('[PWA] User accepted installation prompt');
+                if (pwaBanner) pwaBanner.style.display = 'none';
+                if (pwaBtnHud) pwaBtnHud.style.display = 'none';
+            }
+            deferredInstallPrompt = null;
+        } else if (isIOS()) {
+            openModal('modal-ios-install');
+        } else {
+            alert('Щоб додати SKYWATCH на головний екран, відкрийте меню браузера (⋮) та натисніть "Встановити додаток" або "Додати на головний екран".');
+        }
+    };
+
+    pwaBtnHud?.addEventListener('click', triggerInstall);
+    pwaBtnSettings?.addEventListener('click', triggerInstall);
+    pwaBannerInstall?.addEventListener('click', triggerInstall);
+
+    pwaBannerDismiss?.addEventListener('click', () => {
+        if (pwaBanner) pwaBanner.style.display = 'none';
+        sessionStorage.setItem('skywatch_pwa_dismissed', 'true');
+    });
+
+    // If on iOS and not standalone, show install options
+    if (isIOS() && !isRunningStandalone()) {
+        if (pwaBtnHud) pwaBtnHud.style.display = 'inline-flex';
+        if (pwaBtnSettings) pwaBtnSettings.style.display = 'inline-flex';
+        const dismissed = sessionStorage.getItem('skywatch_pwa_dismissed');
+        if (!dismissed && pwaBanner) {
+            pwaBanner.style.display = 'flex';
+        }
+    }
+
+    window.addEventListener('appinstalled', () => {
+        console.log('[PWA] SkyWatch app installed successfully.');
+        deferredInstallPrompt = null;
+        if (pwaBanner) pwaBanner.style.display = 'none';
+        if (pwaBtnHud) pwaBtnHud.style.display = 'none';
+        if (pwaStatusBadge) {
+            pwaStatusBadge.textContent = 'STANDALONE (ДОДАТОК)';
+            pwaStatusBadge.className = 'badge-tag text-green';
+        }
+    });
+}
+
 // Safe Bootstrap Sequence
 function bootstrapApp() {
     try {
@@ -1366,6 +1533,21 @@ function bootstrapApp() {
         loadUserPreferences();
         setupEventListeners();
         connectWebSocket();
+
+        // Activate specific mobile tab if requested via PWA shortcut (?tab=...)
+        const tab = urlParams.get('tab');
+        if (tab && ['radar', 'intercept', 'telemetry'].includes(tab)) {
+            document.body.setAttribute('data-mobile-view', tab);
+            document.querySelectorAll('.mobile-tab-btn').forEach(b => {
+                b.classList.toggle('active', b.getAttribute('data-tab') === tab);
+            });
+            if (tab === 'radar' && map) {
+                setTimeout(() => map.invalidateSize(), 50);
+            }
+        }
+
+        initServiceWorker();
+        initPWAInstallation();
     } catch (e) {
         console.error("Fatal bootstrap error:", e);
     }

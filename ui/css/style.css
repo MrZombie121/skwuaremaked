@@ -1220,3 +1220,95 @@ body {
     }
 }
 .text-purple { color: var(--color-purple) !important; }
+
+/* --- PWA FLOATING INSTALL BANNER & HUD BUTTONS --- */
+.pwa-banner {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 9999;
+    background: rgba(11, 19, 34, 0.96);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--color-green);
+    box-shadow: 0 4px 24px rgba(0, 255, 136, 0.25), 0 0 12px rgba(0, 0, 0, 0.85);
+    border-radius: 8px;
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    max-width: 94vw;
+    width: 440px;
+    animation: pwaBannerSlideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes pwaBannerSlideUp {
+    from {
+        opacity: 0;
+        transform: translate(-50%, 25px);
+    }
+    to {
+        opacity: 1;
+        transform: translate(-50%, 0);
+    }
+}
+
+.pwa-banner-content {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+    min-width: 0;
+}
+
+.pwa-banner-icon {
+    width: 42px;
+    height: 42px;
+    border-radius: 8px;
+    border: 1px solid rgba(0, 255, 136, 0.5);
+    flex-shrink: 0;
+}
+
+.pwa-banner-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.pwa-banner-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--color-green);
+    letter-spacing: 0.5px;
+}
+
+.pwa-banner-desc {
+    font-size: 11px;
+    color: var(--color-text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.pwa-banner-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+@media (max-width: 900px) {
+    .pwa-banner {
+        bottom: 66px; /* above mobile navigation bar */
+        width: calc(100vw - 20px);
+        padding: 8px 10px;
+    }
+    .pwa-banner-title {
+        font-size: 11px;
+    }
+    .pwa-banner-desc {
+        font-size: 10px;
+    }
+}

@@ -39,7 +39,7 @@ from core.alerts_service import alerts_service
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("SkyWatch.Server")
 
-app = FastAPI(title="SkyWatch Tactical Air Threat Radar", version="2.1.1")
+app = FastAPI(title="SkyWatch Tactical Air Threat Radar", version="2.2.0")
 
 # Enable GZip compression for ultra-fast page load & payload transfer
 app.add_middleware(GZipMiddleware, minimum_size=500)
@@ -61,7 +61,7 @@ MARKERS_DIR = os.path.join(BASE_DIR, "markers")
 class CachedStaticFiles(StaticFiles):
     async def get_response(self, path: str, scope):
         response = await super().get_response(path, scope)
-        if path.endswith(('.png', '.jpg', '.jpeg', '.svg', '.woff2', '.woff', '.css', '.js')):
+        if path.endswith(('.png', '.jpg', '.jpeg', '.svg', '.woff2', '.woff', '.css', '.js', '.webmanifest', '.ico')):
             response.headers["Cache-Control"] = "public, max-age=86400, stale-while-revalidate=3600"
         return response
 
@@ -415,6 +415,32 @@ async def admin_page(key: Optional[str] = None):
     if not key or key != expected_key:
         raise HTTPException(status_code=403, detail="Доступ заборонено: невірний ключ доступу")
     return FileResponse(os.path.join(UI_DIR, "admin.html"))
+
+# --- PWA SERVICE WORKER, MANIFEST & ICONS ---
+
+@app.get("/sw.js")
+async def service_worker():
+    """PWA Service Worker providing offline map tile caching and background prefetching."""
+    headers = {
+        "Service-Worker-Allowed": "/",
+        "Cache-Control": "no-cache, no-store, must-revalidate"
+    }
+    return FileResponse(os.path.join(UI_DIR, "sw.js"), media_type="application/javascript", headers=headers)
+
+@app.get("/manifest.webmanifest")
+@app.get("/manifest.json")
+async def web_manifest():
+    """PWA Web App Manifest for mobile installation and home screen shortcut."""
+    headers = {"Cache-Control": "public, max-age=3600"}
+    return FileResponse(os.path.join(UI_DIR, "manifest.webmanifest"), media_type="application/manifest+json", headers=headers)
+
+@app.get("/favicon.ico")
+async def favicon():
+    """Favicon icon."""
+    fav_path = os.path.join(UI_DIR, "icons", "favicon.ico")
+    if os.path.exists(fav_path):
+        return FileResponse(fav_path, media_type="image/x-icon", headers={"Cache-Control": "public, max-age=86400"})
+    return Response(status_code=404)
 
 # --- DEVELOPER PORTAL & OPENAI-COMPATIBLE AIRSPACE API (/v1/data) ---
 
@@ -825,7 +851,7 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "SkyWatch",
-        "version": "2.1.1",
+        "version": "2.2.0",
         "timestamp": time.time(),
         "telegram_connected": telegram_service.is_connected if telegram_service else False,
         "active_targets": len(deduplicator.get_all_active()),

@@ -1,43 +1,52 @@
 """
 Live Air Raid Alerts Service for SkyWatch Tactical Radar
-Integrates with alerts.in.ua (alarms.in.ua) via key dynamically retrieved from Turso Cloud DB.
-Periodically queries alerts.in.ua every 30 seconds.
+Integrates with UkraineAlarms API (api.ukrainealarm.com) via key dynamically retrieved from Turso Cloud DB, settings, or env.
+Periodically queries api.ukrainealarm.com every 30 seconds.
 Classifies all 136 Official Ukrainian Raions (ADM2) into:
 - NONE: 100% Fully Transparent (No color, no borders, 0 opacity)
-- DRONE (🟡 Yellow Alert): Drone / Shahed Danger directly from alerts.in.ua
-- MISSILE (🔴 Red Alert): Missile / Ballistic / Air Raid directly from alerts.in.ua
+- DRONE (🟡 Yellow Alert): Drone / Shahed Danger directly from UkraineAlarms (Yellow alert level)
+- MISSILE (🔴 Red Alert): Missile / Ballistic / Air Raid directly from UkraineAlarms (Red alert level)
 
-Alert statuses are 100% driven by official alerts.in.ua data, independently of any flight tracks on the map.
+Alert statuses are strictly applied at Raion level (not whole Oblasts unless specified).
 """
 import asyncio
+import json
 import logging
 import os
 import time
+from datetime import datetime
+from typing import Dict, Any, List, Optional, Tuple, Set
 import aiohttp
-from typing import Dict, Any, List, Optional, Set, Tuple
 from pydantic import BaseModel, Field
 
 from core.raions_data import UKRAINE_RAIONS_DATA
-from core.geo_engine import UKRAINE_GEO_DB, haversine_distance_km
 from core.turso_db import turso_db
 from core.db import db
 
 logger = logging.getLogger("SkyWatch.AlertsService")
 
-# Permanent alert regions (>1000 days under occupation / continuous threat)
+DEFAULT_UKRAINE_ALARMS_KEY = "6859f947:06fa78350dc6fd2caed8a39e31c281ae"
 PERMANENT_ALERT_OBLASTS = ("луганська", "автономна республіка крим", "крим")
 
-# Decommunized / renamed raion aliases mapping to standard 136 FIDs
-RAION_ALIASES = {
-    "берестинський": "37",   # Красноградський / Берестинський район
-    "красноградський": "37",
-    "самарівський": "42",    # Новомосковський / Самарівський район
-    "новомосковський": "42",
-    "шептицький": "70",      # Червоноградський / Шептицький район
-    "червоноградський": "70",
-    "звягельський": "110",    # Новоград-Волинський / Звягельський район
-    "новоград-волинський": "110",
+# Renamed / decommunized raions mapping to standard 136 names
+ALIASES = {
+    "берестинський": "красноградський",
+    "самарівський": "новомосковський",
+    "шептицький": "червоноградський",
+    "звягельський": "новоград волинський",
+    "володимирський": "володимир волинський",
+    "дністровський": "дністровський",
 }
+
+def normalize_name(s: str) -> str:
+    if not s:
+        return ""
+    s = s.lower()
+    for ch in ["’", "ʼ", "`", "ʻ", "'", '"', "«", "»"]:
+        s = s.replace(ch, "")
+    s = s.replace("район", "").replace("р-н", "").replace("місто", "").replace("м.", "").strip()
+    s = s.replace("-", " ")
+    return " ".join(s.split())
 
 class RaionAlertStatus(BaseModel):
     fid: int
@@ -56,15 +65,20 @@ class AirAlertsService:
         self.raion_alerts_state: Dict[str, RaionAlertStatus] = {}
         self.is_running = False
         self._task: Optional[asyncio.Task] = None
+        self._dist_to_fid: Dict[str, str] = {}
+        self._comm_to_dist: Dict[str, str] = {}
+        self._state_to_fids: Dict[str, List[str]] = {}
+        self._norm_name_to_fid: Dict[str, str] = {}
+        self._threats_provider = None
+
         self._init_default_states()
+        self._load_region_mappings()
 
     def _init_default_states(self):
         now = time.time()
         for fid_str, rdata in UKRAINE_RAIONS_DATA.items():
             oblast = rdata.get("oblast", "")
             obl_lower = oblast.lower()
-            
-            # Luhansk Oblast & Crimea have permanent air alert
             is_permanent = any(p in obl_lower for p in PERMANENT_ALERT_OBLASTS)
             
             self.raion_alerts_state[fid_str] = RaionAlertStatus(
@@ -80,124 +94,103 @@ class AirAlertsService:
                 updated_at=now
             )
 
+    def _load_region_mappings(self):
+        for fid, r in UKRAINE_RAIONS_DATA.items():
+            norm = normalize_name(r["name"])
+            self._norm_name_to_fid[norm] = fid
+
+        # Load cached regions hierarchy
+        data_paths = [
+            os.path.join(os.path.dirname(__file__), "..", "data", "ua_alarm_regions.json"),
+            "data/ua_alarm_regions.json",
+            "hosting_dist/data/ua_alarm_regions.json"
+        ]
+        loaded = False
+        for p in data_paths:
+            if os.path.exists(p):
+                try:
+                    with open(p, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    self._build_region_maps(data)
+                    loaded = True
+                    break
+                except Exception as e:
+                    logger.debug(f"Notice loading regions from {p}: {e}")
+
+        # Fallback mappings for special top-level regions
+        self._state_to_fids["16"] = [fid for fid, r in UKRAINE_RAIONS_DATA.items() if "луган" in r["oblast"].lower()]
+        self._state_to_fids["9999"] = [fid for fid, r in UKRAINE_RAIONS_DATA.items() if "крим" in r["oblast"].lower()]
+        
+        kh_fid = self._norm_name_to_fid.get("харківський")
+        if kh_fid:
+            self.state_to_fids_set("1293", [kh_fid])
+            self._comm_to_dist["1293"] = "dist_kharkiv_comm"
+            self._dist_to_fid["dist_kharkiv_comm"] = kh_fid
+
+        zp_fid = self._norm_name_to_fid.get("запорізький")
+        if zp_fid:
+            self.state_to_fids_set("564", [zp_fid])
+            self._comm_to_dist["564"] = "dist_zp_comm"
+            self._dist_to_fid["dist_zp_comm"] = zp_fid
+
+        kyiv_fids = [fid for fid, r in UKRAINE_RAIONS_DATA.items() if "київ" in r["oblast"].lower()]
+        self._state_to_fids["31"] = kyiv_fids
+
+    def state_to_fids_set(self, key: str, fids: List[str]):
+        self._state_to_fids[key] = fids
+
+    def _build_region_maps(self, data: dict):
+        for st in data.get("states", []):
+            s_id = str(st.get("regionId") or "")
+            state_fids = []
+
+            for d in st.get("regionChildIds", []):
+                d_id = str(d.get("regionId") or "")
+                d_name = d.get("regionName") or ""
+                d_norm = normalize_name(d_name)
+                target_norm = ALIASES.get(d_norm, d_norm)
+
+                fid = self._norm_name_to_fid.get(target_norm)
+                if not fid:
+                    for r_norm, r_fid in self._norm_name_to_fid.items():
+                        if (len(target_norm) >= 4 and target_norm in r_norm) or (len(r_norm) >= 4 and r_norm in target_norm):
+                            fid = r_fid
+                            break
+
+                if fid:
+                    self._dist_to_fid[d_id] = fid
+                    state_fids.append(fid)
+                    for c in d.get("regionChildIds", []):
+                        c_id = str(c.get("regionId") or "")
+                        self._comm_to_dist[c_id] = d_id
+
+            if state_fids:
+                self._state_to_fids[s_id] = list(set(state_fids))
+
     async def _get_active_api_key(self) -> str:
-        """Retrieves alerts API key dynamically from Turso Cloud DB, settings, or env."""
         key = await turso_db.get_setting("alerts_api_key")
         if key and key.strip():
             return key.strip()
         saved = db.get_setting("alerts_api_key")
         if saved and saved.strip():
             return saved.strip()
-        return os.getenv("ALERTS_API_KEY", "").strip()
+        env_key = os.getenv("ALERTS_API_KEY", "").strip()
+        if env_key:
+            return env_key
+        return DEFAULT_UKRAINE_ALARMS_KEY
+
+    def set_threats_provider(self, provider):
+        self._threats_provider = provider
 
     def update_from_active_threats(self, active_targets: List[Any]):
-        """
-        No-op: Radar targets do NOT modify official raion alert levels.
-        Alerts are 100% driven by official alerts.in.ua API.
-        """
         pass
 
-    def _find_closest_raion(self, lat: float, lon: float) -> Optional[str]:
-        """Finds closest raion FID for exact GPS coordinates."""
-        closest_fid = None
-        min_dist = float("inf")
-        for fid_str, rdata in UKRAINE_RAIONS_DATA.items():
-            c_lat, c_lon = rdata.get("center", (0.0, 0.0))
-            dist = haversine_distance_km(lat, lon, c_lat, c_lon)
-            if dist < min_dist:
-                min_dist = dist
-                closest_fid = fid_str
-        return closest_fid
-
-    def _match_alert_to_raions(self, loc_title: str, loc_oblast: str, loc_raion: str, loc_type: str) -> Set[str]:
-        """
-        Maps an incoming alerts.in.ua item to matching official 136 raion FIDs.
-        Accurately binds city/hromada/raion alerts to their single containing raion
-        WITHOUT blowing up to the entire oblast.
-        """
-        t_title = (loc_title or "").strip().lower()
-        t_raion = (loc_raion or "").strip().lower() if loc_raion and loc_raion != "None" else ""
-        t_obl = (loc_oblast or "").strip().lower() if loc_oblast and loc_oblast != "None" else ""
-        loc_type = (loc_type or "").strip().lower()
-
-        matched: Set[str] = set()
-
-        # 1. Crimea & Sevastopol
-        if any(k in t_title or k in t_obl for k in ("крим", "севастопол", "crimea", "sevastopol")):
-            for fid_str, rdata in UKRAINE_RAIONS_DATA.items():
-                if "крим" in rdata.get("oblast", "").lower():
-                    matched.add(fid_str)
-            return matched
-
-        # 2. Luhansk Oblast
-        if loc_type == "oblast" and "луган" in t_title:
-            for fid_str, rdata in UKRAINE_RAIONS_DATA.items():
-                if "луган" in rdata.get("oblast", "").lower():
-                    matched.add(fid_str)
-            return matched
-
-        # 3. Check aliases in title or raion
-        for alias, fid in RAION_ALIASES.items():
-            if alias in t_title or (t_raion and alias in t_raion):
-                matched.add(fid)
-                return matched
-
-        # 4. Specific Raion in loc_raion (from Hromada alerts)
-        if t_raion and t_raion != "none":
-            clean_r = t_raion.replace("район", "").replace("р-н", "").strip()
-            for fid_str, rdata in UKRAINE_RAIONS_DATA.items():
-                r_name_clean = rdata["name"].lower().replace("район", "").replace("р-н", "").strip()
-                if clean_r and (clean_r == r_name_clean or clean_r in r_name_clean or r_name_clean in clean_r):
-                    matched.add(fid_str)
-            if matched:
-                return matched
-
-        # 5. Raion in loc_title (if loc_type == 'raion' or 'район' in title)
-        if loc_type == "raion" or "район" in t_title:
-            clean_r = t_title.replace("район", "").replace("р-н", "").strip()
-            for fid_str, rdata in UKRAINE_RAIONS_DATA.items():
-                r_name_clean = rdata["name"].lower().replace("район", "").replace("р-н", "").strip()
-                if clean_r and (clean_r == r_name_clean or clean_r in r_name_clean or r_name_clean in clean_r):
-                    if t_obl and t_obl != "none":
-                        clean_obl = t_obl.replace("область", "").replace("ська", "").replace("зька", "").replace("цька", "").strip()
-                        r_obl_clean = rdata.get("oblast", "").lower().replace("область", "").replace("ська", "").replace("зька", "").replace("цька", "").strip()
-                        if clean_obl and (clean_obl in r_obl_clean or r_obl_clean in clean_obl):
-                            matched.add(fid_str)
-                    else:
-                        matched.add(fid_str)
-            if matched:
-                return matched
-
-        # 6. City or Hromada lookup in Geo DB -> maps to EXACT containing single raion
-        city_clean = t_title.replace("м.", "").replace("місто", "").replace("територіальна", "").replace("громада", "").strip()
-        for name, gdata in UKRAINE_GEO_DB.items():
-            if len(city_clean) >= 3 and (city_clean == name or city_clean in name or name in city_clean):
-                fid = self._find_closest_raion(gdata["lat"], gdata["lon"])
-                if fid:
-                    matched.add(fid)
-                    return matched
-
-        # 7. Full Oblast alert (ONLY if explicitly loc_type == 'oblast' and not a single raion/city)
-        if loc_type == "oblast":
-            if "київ" in t_title:
-                for fid_str, rdata in UKRAINE_RAIONS_DATA.items():
-                    if "київ" in rdata.get("oblast", "").lower():
-                        matched.add(fid_str)
-            else:
-                clean_obl = t_title.replace("область", "").replace("ська", "").replace("зька", "").replace("цька", "").strip()
-                for fid_str, rdata in UKRAINE_RAIONS_DATA.items():
-                    r_obl_clean = rdata.get("oblast", "").lower().replace("область", "").replace("ська", "").replace("зька", "").replace("цька", "").strip()
-                    if clean_obl and (clean_obl in r_obl_clean or r_obl_clean in clean_obl):
-                        matched.add(fid_str)
-
-        return matched
-
     async def fetch_external_alerts(self):
-        """Fetches live Ukrainian state alerts from alerts.in.ua API every 30s."""
+        """Fetches live Ukrainian state alerts from UkraineAlarms API every 30s."""
         api_key = await self._get_active_api_key()
         now = time.time()
-        
-        # Default active raion alerts map with permanent alert regions
+
+        # Permanent alert regions (Luhansk & Crimea)
         active_raion_alerts: Dict[str, Tuple[str, str, str, Optional[float]]] = {} # fid -> (level, type, reason, started_at)
         for fid_str, rdata in UKRAINE_RAIONS_DATA.items():
             obl_lower = rdata.get("oblast", "").lower()
@@ -213,75 +206,107 @@ class AirAlertsService:
             self._apply_alerts_snapshot(active_raion_alerts, now)
             return
 
-        url = "https://api.alerts.in.ua/v1/alerts/active.json"
-        
+        url = "https://api.ukrainealarm.com/api/v3/alerts"
+        headers = {
+            "Authorization": api_key,
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) SkyWatch Tactical Radar/2.1"
+        }
+
         try:
-            headers = {
-                "Authorization": f"Bearer {api_key}",
-                "User-Agent": "Mozilla/5.0 (SkyWatch Radar Engine v2.1.1)"
-            }
             async with aiohttp.ClientSession() as session:
-                async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=8)) as resp:
+                async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                     if resp.status == 200:
-                        data = await resp.json()
-                        alerts = data.get("alerts", [])
+                        alerts_data = await resp.json()
+                        if isinstance(alerts_data, list):
+                            for item in alerts_data:
+                                reg_id = str(item.get("regionId") or "")
+                                reg_type = str(item.get("regionType") or "")
+                                active_alerts = item.get("activeAlerts") or []
+                                if not active_alerts:
+                                    continue
 
-                        for a in alerts:
-                            loc_title = str(a.get("location_title") or "").strip()
-                            loc_raion = str(a.get("location_raion") or "").strip()
-                            loc_oblast = str(a.get("location_oblast") or "").strip()
-                            loc_type = str(a.get("location_type") or "").strip()
-                            alert_type = str(a.get("alert_type") or "air_raid").lower().strip()
-                            alert_level = str(a.get("alert_level") or "").lower().strip()
-                            threats = a.get("threats") or []
+                                has_red = False
+                                has_yellow = False
+                                threat_type = "air_raid"
+                                reason = ""
+                                started_at = None
 
-                            # Directly extract yellow vs red alert status from alerts.in.ua API
-                            is_yellow = alert_level == "yellow" or any(
-                                str(t.get("level") or "").lower() == "yellow" or 
-                                str(t.get("threat_type") or "").lower() == "drones"
-                                for t in threats
-                            )
-                            is_red = alert_level == "red" or alert_type in ("artillery_shelling", "urban_fights", "chemical", "nuclear")
+                                for alert in active_alerts:
+                                    a_type = str(alert.get("type") or "AIR").upper()
+                                    levels = alert.get("activeAlertLevels") or []
 
-                            if is_yellow and not is_red:
-                                level = "DRONE"
-                                reason = "Загроза ударних БпЛА (Жовтий рівень)"
-                            else:
-                                level = "MISSILE"
-                                reason = "Повітряна тривога (Червоний рівень)" if alert_type == "air_raid" else "Артилерійський обстріл"
+                                    if a_type in ("ARTILLERY", "URBAN_FIGHTS", "CHEMICAL", "NUCLEAR"):
+                                        has_red = True
+                                        threat_type = a_type.lower()
 
-                            # Parse start timestamp if available
-                            started_at = now
-                            started_str = a.get("started_at")
-                            if started_str:
-                                try:
-                                    started_at = time.mktime(time.strptime(started_str[:19], "%Y-%m-%dT%H:%M:%S"))
-                                except Exception:
-                                    started_at = now
+                                    for lvl in levels:
+                                        lvl_name = str(lvl.get("alertLevel") or "").lower()
+                                        if lvl_name == "red":
+                                            has_red = True
+                                            if not reason and lvl.get("reason"):
+                                                reason = lvl.get("reason")
+                                        elif lvl_name == "yellow":
+                                            has_yellow = True
+                                            if not reason and lvl.get("reason"):
+                                                reason = lvl.get("reason")
 
-                            matched_fids = self._match_alert_to_raions(loc_title, loc_oblast, loc_raion, loc_type)
+                                        created_str = lvl.get("createdAt")
+                                        if created_str and not started_at:
+                                            try:
+                                                started_at = datetime.fromisoformat(created_str.replace("Z", "+00:00")).timestamp()
+                                            except Exception:
+                                                started_at = now
 
-                            for fid_str in matched_fids:
-                                # MISSILE tier has higher severity than DRONE tier
-                                if fid_str not in active_raion_alerts or (active_raion_alerts[fid_str][0] == "DRONE" and level == "MISSILE"):
-                                    active_raion_alerts[fid_str] = (level, alert_type, reason, started_at)
+                                if has_red:
+                                    level = "MISSILE"
+                                    if not reason:
+                                        reason = "Повітряна тривога (Червоний рівень)"
+                                elif has_yellow:
+                                    level = "DRONE"
+                                    if not reason:
+                                        reason = "Загроза ударних БпЛА (Жовтий рівень)"
+                                else:
+                                    level = "MISSILE"
+                                    if not reason:
+                                        reason = "Повітряна тривога"
 
-                        # Apply fresh snapshot to all 136 Raions
+                                # Target specific Raion (NOT the whole oblast)
+                                target_fids: Set[str] = set()
+                                if reg_type == "District":
+                                    fid = self._dist_to_fid.get(reg_id)
+                                    if fid:
+                                        target_fids.add(fid)
+                                elif reg_type == "Community":
+                                    parent_dist = self._comm_to_dist.get(reg_id)
+                                    if parent_dist:
+                                        fid = self._dist_to_fid.get(parent_dist)
+                                        if fid:
+                                            target_fids.add(fid)
+                                elif reg_type == "State":
+                                    fids = self._state_to_fids.get(reg_id)
+                                    if fids:
+                                        target_fids.update(fids)
+
+                                for fid in target_fids:
+                                    # MISSILE tier has higher severity than DRONE tier
+                                    if fid not in active_raion_alerts or (active_raion_alerts[fid][0] == "DRONE" and level == "MISSILE"):
+                                        active_raion_alerts[fid] = (level, threat_type, reason, started_at or now)
+
                         self._apply_alerts_snapshot(active_raion_alerts, now)
 
                     elif resp.status in (401, 403):
-                        logger.warning(f"alerts.in.ua auth error HTTP {resp.status}. Check API key in Turso database.")
+                        logger.warning(f"UkraineAlarms auth error HTTP {resp.status}. Check API key.")
                         self._apply_alerts_snapshot(active_raion_alerts, now)
                     else:
-                        logger.warning(f"alerts.in.ua returned HTTP {resp.status}")
+                        logger.warning(f"UkraineAlarms returned HTTP {resp.status}")
                         self._apply_alerts_snapshot(active_raion_alerts, now)
 
         except Exception as e:
-            logger.debug(f"alerts.in.ua fetch notice: {e}")
+            logger.debug(f"UkraineAlarms fetch notice: {e}")
             self._apply_alerts_snapshot(active_raion_alerts, now)
 
     def _apply_alerts_snapshot(self, active_raion_alerts: Dict[str, Tuple[str, str, str, Optional[float]]], now: float):
-        """Applies exact alert states to all 136 Raions, reverting inactive ones to transparent NONE."""
+        """Applies exact alert states to all 136 Raions, reverting inactive ones (отбой) to transparent NONE."""
         for fid_str, status in self.raion_alerts_state.items():
             if fid_str in active_raion_alerts:
                 new_level, new_type, new_reason, new_started = active_raion_alerts[fid_str]
@@ -322,7 +347,7 @@ class AirAlertsService:
             return
         self.is_running = True
         self._task = asyncio.create_task(self._run_loop())
-        logger.info("Official alerts.in.ua live air defense monitoring service started (30s polling cycle).")
+        logger.info("Official UkraineAlarms live air defense monitoring service started (30s polling cycle).")
 
     async def stop(self):
         self.is_running = False

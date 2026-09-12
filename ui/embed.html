@@ -235,17 +235,17 @@
         }
 
         function createCustomMarkerIcon(target) {
-            let iconFile = '/markers/shahed.png?v=2.1.1';
+            let iconFile = '/markers/shahed.png?v=2.2.0';
             switch (target.target_type) {
-                case 'AIRCRAFT': iconFile = '/markers/aircraft.png?v=2.1.1'; break;
-                case 'JET_UAV': iconFile = '/markers/rs.png?v=2.1.1'; break;
-                case 'MISSILE': iconFile = '/markers/missile.png?v=2.1.1'; break;
-                case 'BALLISTIC': iconFile = '/markers/ballistic.png?v=2.1.1'; break;
-                case 'KAB': iconFile = '/markers/kab.png?v=2.1.1'; break;
-                case 'RECON': iconFile = '/markers/recon.png?v=2.1.1'; break;
-                case 'FPV': iconFile = '/markers/fpv.png?v=2.1.1'; break;
-                case 'DECOY': iconFile = '/markers/decoy.png?v=2.1.1'; break;
-                default: iconFile = '/markers/shahed.png?v=2.1.1'; break;
+                case 'AIRCRAFT': iconFile = '/markers/aircraft.png?v=2.2.0'; break;
+                case 'JET_UAV': iconFile = '/markers/rs.png?v=2.2.0'; break;
+                case 'MISSILE': iconFile = '/markers/missile.png?v=2.2.0'; break;
+                case 'BALLISTIC': iconFile = '/markers/ballistic.png?v=2.2.0'; break;
+                case 'KAB': iconFile = '/markers/kab.png?v=2.2.0'; break;
+                case 'RECON': iconFile = '/markers/recon.png?v=2.2.0'; break;
+                case 'FPV': iconFile = '/markers/fpv.png?v=2.2.0'; break;
+                case 'DECOY': iconFile = '/markers/decoy.png?v=2.2.0'; break;
+                default: iconFile = '/markers/shahed.png?v=2.2.0'; break;
             }
 
             const rotation = (target.heading_deg !== undefined && target.heading_deg !== null) ? target.heading_deg : 0;

@@ -1,0 +1,97 @@
+{
+  "name": "SKYWATCH — Тактичний радар",
+  "short_name": "SKYWATCH",
+  "description": "Тактичний радар моніторингу повітряних загроз України в реальному часі",
+  "id": "/?source=pwa",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": [
+    "window-controls-overlay",
+    "standalone",
+    "minimal-ui"
+  ],
+  "orientation": "any",
+  "background_color": "#070b12",
+  "theme_color": "#070b12",
+  "lang": "uk",
+  "dir": "ltr",
+  "categories": [
+    "navigation",
+    "utilities",
+    "news"
+  ],
+  "icons": [
+    {
+      "src": "/ui/icons/icon-32.png",
+      "sizes": "32x32",
+      "type": "image/png"
+    },
+    {
+      "src": "/ui/icons/icon-64.png",
+      "sizes": "64x64",
+      "type": "image/png"
+    },
+    {
+      "src": "/ui/icons/icon-180.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    },
+    {
+      "src": "/ui/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/ui/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/ui/icons/icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Тактичний радар",
+      "short_name": "Радар",
+      "description": "Переглянути тактичну карту повітряних цілей",
+      "url": "/?tab=radar",
+      "icons": [
+        {
+          "src": "/ui/icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Перехоплення Telegram",
+      "short_name": "Telegram",
+      "description": "Прямий потік розвідувальних каналів",
+      "url": "/?tab=intercept",
+      "icons": [
+        {
+          "src": "/ui/icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Телеметрія цілей",
+      "short_name": "Цілі",
+      "description": "Список активних повітряних загроз та координати",
+      "url": "/?tab=telemetry",
+      "icons": [
+        {
+          "src": "/ui/icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
+  ]
+}

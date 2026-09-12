@@ -1,5 +1,17 @@
 [
   {
+    "target_id": "TGT-RS-101",
+    "source_channel": "Тестовий Радар",
+    "raw_text": "Реактивний БПЛА в районі Кропивницький, летить у бік Умань на великій швидкості!",
+    "target_type": "JET_UAV",
+    "location_name": "Умань",
+    "lat": 48.7484,
+    "lon": 30.2218,
+    "heading": "E",
+    "heading_deg": 99.34431229998461,
+    "timestamp": 1789240807.2691054
+  },
+  {
     "target_id": "TGT-FP-115",
     "source_channel": "Додаткове джерело",
     "raw_text": "FPV-дрон курсом на Цупівка. Підтверджень: 2.",
@@ -3872,19 +3884,6 @@
     "heading": "E",
     "heading_deg": 85.45274321998772,
     "timestamp": 1788450793.7891927
-  },
-  {
-    "target_id": "TGT-SH-111",
-    "source_channel": "Додаткове джерело",
-    "raw_text": "БпЛА курсом на Славутич. Підтверджень: 2.",
-    "target_type": "SHAHED",
-    "location_name": "Славутич",
-    "destination_name": "Славута",
-    "lat": 51.6948,
-    "lon": 31.2623,
-    "heading": "SW",
-    "heading_deg": 245.0636638298451,
-    "timestamp": 1788450793.5576735
   },
   {
     "target_id": "TGT-SH-111",

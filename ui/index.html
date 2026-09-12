@@ -13,7 +13,18 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <!-- Tactical Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700;800&family=Orbitron:wght@600;700;800;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/ui/css/style.css?v=2.6.0">
+    <!-- PWA & Mobile Web App Meta Tags -->
+    <link rel="manifest" href="/manifest.webmanifest">
+    <meta name="theme-color" content="#070b12">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="SKYWATCH">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link rel="icon" type="image/png" sizes="32x32" href="/ui/icons/icon-32.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="/ui/icons/icon-192.png">
+    <link rel="apple-touch-icon" href="/ui/icons/icon-180.png">
+    <link rel="stylesheet" href="/ui/css/style.css?v=2.7.0">
 </head>
 <body>
     <!-- Top HUD Header -->
@@ -21,7 +32,7 @@
         <div class="logo-section">
             <div class="radar-spinner"></div>
             <div class="logo-title">
-                <h1>SKYWATCH <span class="badge-tag">C4ISR RADAR v2.1.1</span></h1>
+                <h1>SKYWATCH <span class="badge-tag">C4ISR RADAR v2.2.0</span></h1>
                 <span class="sub-title">UKRAINE TACTICAL AIRSPACE MONITORING SYSTEM</span>
             </div>
         </div>
@@ -72,6 +83,9 @@
             <div id="admin-test-badge" class="test-mode-indicator" style="display: none;">
                 🧪 ТЕСТОВИЙ РЕЖИМ (ОБХІД ТЕХ. РОБІТ)
             </div>
+            <button id="btn-pwa-install" class="hud-btn highlight" style="display: none;" title="Встановити SKYWATCH як додаток на екран">
+                <span class="btn-icon">📱</span> ВСТАНОВИТИ
+            </button>
             <a href="/developers" target="_blank" class="hud-btn highlight" title="Отримати API ключ та документацію v1/data">
                 <span class="btn-icon">💻</span> API / DEV
             </a>
@@ -115,7 +129,7 @@
                         <span class="log-channel">[SYSTEM]</span>
                         <span class="log-time">INITIALIZING</span>
                     </div>
-                    <div class="log-text">Підключення до ядра тактичного моніторингу SKYWATCH v2.1.1...</div>
+                    <div class="log-text">Підключення до ядра тактичного моніторингу SKYWATCH v2.2.0...</div>
                 </div>
             </div>
         </aside>
@@ -313,7 +327,7 @@
                     <div class="sys-info-header">
                         <div class="sys-title">
                             <span class="sys-name">SKYWATCH C4ISR RADAR</span>
-                            <span class="badge-tag">v2.1.1 PROFESSIONAL</span>
+                            <span class="badge-tag">v2.2.0 PROFESSIONAL</span>
                         </div>
                     </div>
                     <div class="sys-specs-grid">
@@ -413,12 +427,67 @@
                         <input type="checkbox" id="set-sound-kill" checked>
                     </div>
                 </div>
+
+                <!-- PWA & Map Offline Caching Settings -->
+                <div class="box-section">
+                    <div class="section-title">📱 PWA ДОДАТОК ТА ОФЛАЙН-КЕШ КАРТИ</div>
+                    <div class="setting-row">
+                        <span>Режим запуску додатку:</span>
+                        <div style="display: flex; gap: 8px; align-items: center;">
+                            <span id="pwa-status-badge" class="badge-tag">БРАУЗЕР</span>
+                            <button type="button" id="btn-settings-install" class="mini-btn highlight" style="display: none;">📲 ВСТАНОВИТИ</button>
+                        </div>
+                    </div>
+                    <div class="setting-row">
+                        <span>Офлайн-кеш тайлів карти:</span>
+                        <span id="cache-tiles-stats" class="text-green">0 тайлів збережено</span>
+                    </div>
+                    <div class="setting-row">
+                        <span>Керування пам'яттю кешу:</span>
+                        <button type="button" id="btn-clear-tile-cache" class="mini-btn danger" style="padding: 5px 12px;">🗑️ ОЧИСТИТИ КЕШ КАРТИ</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- PWA Install Banner -->
+    <div id="pwa-install-banner" class="pwa-banner" style="display: none;">
+        <div class="pwa-banner-content">
+            <img src="/ui/icons/icon-192.png" alt="SKYWATCH" class="pwa-banner-icon">
+            <div class="pwa-banner-text">
+                <span class="pwa-banner-title">ВСТАНОВИТИ SKYWATCH</span>
+                <span class="pwa-banner-desc">Додати радар на головний екран як додаток</span>
+            </div>
+        </div>
+        <div class="pwa-banner-actions">
+            <button id="pwa-btn-install" class="hud-btn highlight mini-btn">📲 ДОДАТИ</button>
+            <button id="pwa-btn-dismiss" class="mini-btn" title="Закрити">✕</button>
+        </div>
+    </div>
+
+    <!-- MODAL: iOS Safari Add-to-Home-Screen Instructions -->
+    <div class="modal-backdrop" id="modal-ios-install" style="display: none;">
+        <div class="modal-dialog" style="max-width: 440px;">
+            <div class="modal-header">
+                <h2>📲 ЯК ДОДАТИ НА ЕКРАН IPHONE / IPAD</h2>
+                <button class="modal-close" onclick="closeModal('modal-ios-install')">✕</button>
+            </div>
+            <div class="modal-body" style="font-size: 13px; line-height: 1.6;">
+                <p>Щоб користуватися радаром як окремим повноцінним додатком:</p>
+                <div style="background: rgba(0, 255, 136, 0.05); border: 1px solid rgba(0, 255, 136, 0.2); border-radius: 6px; padding: 12px; margin: 12px 0;">
+                    <div style="margin-bottom: 8px;"><b>1.</b> Натисніть кнопку <b>«Поділитися»</b> <span style="font-size: 16px;">⎋</span> у нижній панелі Safari.</div>
+                    <div style="margin-bottom: 8px;"><b>2.</b> Прокрутіть меню та оберіть <b>«На початковий екран»</b> <span style="font-size: 16px;">⊞</span>.</div>
+                    <div><b>3.</b> Натисніть <b>«Додати»</b> у верхньому правому кутку.</div>
+                </div>
+                <p style="color: var(--color-cyan);">✓ Іконку SKYWATCH буде додано на головний екран вашого пристрою.</p>
+                <button class="hud-btn highlight" style="width: 100%; margin-top: 12px;" onclick="closeModal('modal-ios-install')">ЗРОЗУМІЛО</button>
             </div>
         </div>
     </div>
 
     <!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="/ui/js/app.js?v=2.7.6"></script>
+    <script src="/ui/js/app.js?v=2.8.0"></script>
 </body>
 </html>

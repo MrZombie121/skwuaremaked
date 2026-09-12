@@ -2042,61 +2042,61 @@
     "target_subtype": "Реактивний",
     "count": 1,
     "status": "ACTIVE",
-    "current_lat": 49.5883,
-    "current_lon": 34.5514,
-    "current_location_name": "Полтава",
-    "destination_name": "Семенівка",
-    "dest_lat": 52.18,
-    "dest_lon": 32.58,
-    "eta_minutes": 39.1,
-    "distance_to_dest_km": 319.6199327599265,
+    "current_lat": 48.7484,
+    "current_lon": 30.2218,
+    "current_location_name": "Умань",
+    "destination_name": "Кропивницький",
+    "dest_lat": 48.5079,
+    "dest_lon": 32.2623,
+    "eta_minutes": 18.7,
+    "distance_to_dest_km": 152.3244068920104,
     "is_circling": false,
     "circling_start": null,
-    "heading": "NW",
-    "heading_deg": 335.12489105937516,
+    "heading": "E",
+    "heading_deg": 99.34431229998461,
     "speed_kmh": 490.0,
     "altitude_info": null,
     "sources": [
-      "Повітряні Сили ЗС України / Air Force of the Armed Forces of Ukraine"
+      "Тестовий Радар"
     ],
     "raw_reports": [
-      "[Повітряні Сили ЗС України / Air Force of the Armed Forces of Ukraine] 🏍 Реактивний БпЛА у напрямку Семенівки на Полтавщині з південного сходу"
+      "[Тестовий Радар] Реактивний БПЛА в районі Кропивницький, летить у бік Умань на великій швидкості!"
     ],
-    "first_seen": 1788455819.9549348,
-    "last_updated": 1788455819.9549348,
+    "first_seen": 1789240807.2691054,
+    "last_updated": 1789240807.2691054,
     "confidence_score": 0.88,
     "trajectory": [
       [
-        49.5883,
-        34.5514,
-        1788455519.9549348
+        48.7484,
+        30.2218,
+        1789240507.2691054
       ],
       [
-        49.5883,
-        34.5514,
-        1788455819.9549348
+        48.7484,
+        30.2218,
+        1789240807.2691054
       ]
     ],
     "hazard_cone": [
       [
-        49.5883,
-        34.5514
+        48.7484,
+        30.2218
       ],
       [
-        49.8108,
-        34.2072
+        48.8056,
+        30.6915
       ],
       [
-        49.8737,
-        34.346
+        48.6963,
+        30.6924
       ],
       [
-        49.9019,
-        34.5099
+        48.5934,
+        30.6366
       ],
       [
-        49.5883,
-        34.5514
+        48.7484,
+        30.2218
       ]
     ]
   },

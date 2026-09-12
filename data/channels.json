@@ -375,12 +375,12 @@
     "id": 32,
     "tg_channel_id": null,
     "username": "test_radar_ua",
-    "title": "Тестовий Радар 1787429557",
+    "title": "Тестовий Радар 1789240807",
     "folder_url": "https://t.me/addlist/syGYtBj5T9AxNzIy",
     "is_active": true,
-    "total_messages_parsed": 4,
-    "threats_detected": 4,
-    "last_message_at": 1787429557.8193727,
+    "total_messages_parsed": 5,
+    "threats_detected": 5,
+    "last_message_at": 1789240807.0529764,
     "added_at": 1786961549.3173635
   },
   {
